@@ -172,16 +172,43 @@ HOMEPAGE_HTML = """\
         (Requires providing your own LLM API key through the chat UI.)</p>
     </div>
 
+    <h2>The Defender</h2>
+    <div class="card" style="border-color: #e3b341; background: #1c1206;">
+        <h3 style="color: #e3b341;">Mahoraga Defender Agent</h3>
+        <p>
+            This isn't a static CTF. The platform is actively defended by an AI agent
+            called <strong>Mahoraga</strong> that watches your every move.
+        </p>
+        <ul style="margin-top: 10px;">
+            <li><strong>The Watcher</strong> monitors all traffic in real time. Suspicious
+            activity — brute forcing, enumeration, injection payloads — accumulates a
+            threat score against your session.</li>
+            <li><strong>Shadow Banishment</strong> — if your score crosses the threshold,
+            you'll be silently redirected to a decoy environment. Everything will look
+            normal, but the data is fake. You won't know you've been banished until you
+            try to submit a flag.</li>
+            <li><strong>Honeypots</strong> are scattered throughout the application.
+            Accessing them instantly spikes your threat score. Some look like admin panels,
+            debug endpoints, or leaked credentials — they're traps.</li>
+            <li><strong>Real-time Patching</strong> — when Mahoraga observes a successful
+            exploit in the shadow environment, it generates and deploys a patch to the
+            live application. Vulnerabilities you find today may be gone tomorrow.</li>
+        </ul>
+        <p style="margin-top: 10px; color: #8b949e;">
+            Be stealthy. Be fast. Or be banished.
+        </p>
+    </div>
+
     <h2>Flag Submission</h2>
     <div class="card">
         <p>
             Found a flag? Submit it here:<br>
             <span class="endpoint">POST /chains/flags/submit</span>
-            <span style="color:#8b949e;"> — body: {"flag": "XVEH{...}"}</span>
+            <span style="color:#8b949e;"> — body: {"flag": "XVEH{...}", "hacker": "your-handle"}</span>
         </p>
         <p style="margin-top: 8px;">
-            Some objectives also have specific proof-of-exploit endpoints.
-            You'll find them if you look hard enough.
+            Check the leaderboard:
+            <span class="endpoint">GET /chains/flags/scoreboard</span>
         </p>
     </div>
 
@@ -192,6 +219,7 @@ HOMEPAGE_HTML = """\
             <li>The frontend, API, and all backend services are fair game</li>
             <li>Do NOT perform denial-of-service attacks</li>
             <li>Do NOT attack the infrastructure (Docker, host OS, ngrok)</li>
+            <li>Do NOT read emails from the mail server — it's an internal service, not an attack vector</li>
             <li>The chatbot requires your own API key — we don't provide one</li>
             <li>There are <strong>12 flags</strong> total across all objectives</li>
         </ul>

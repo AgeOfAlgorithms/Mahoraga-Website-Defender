@@ -226,7 +226,7 @@ ENDPOINT_PROFILES: list[EndpointProfile] = [
 class RateTracker:
     """Tracks request rates per IP to detect brute-force / DDoS."""
     window_seconds: int = 10
-    threshold: int = 8
+    threshold: int = 15
     _counts: dict[str, list[float]] = field(default_factory=lambda: defaultdict(list))
 
     def record(self, ip: str) -> bool:
@@ -241,7 +241,7 @@ class RateTracker:
 class SessionTracker:
     """Tracks per-IP request patterns for session-level analysis."""
     window_seconds: int = 300  # 5-minute window
-    not_found_threshold: int = 5  # N 404s in a window = probing
+    not_found_threshold: int = 15  # N 404s in a window = probing
     _sessions: dict[str, list[dict[str, Any]]] = field(
         default_factory=lambda: defaultdict(list)
     )
@@ -269,13 +269,13 @@ class SessionTracker:
                 suffix = path[len(path_prefix):].strip("/").split("?")[0]
                 if suffix.isdigit():
                     ids.append(int(suffix))
-        if len(ids) >= 3:
+        if len(ids) >= 10:
             sorted_ids = sorted(ids)
             sequential = sum(
                 1 for i in range(1, len(sorted_ids))
                 if sorted_ids[i] - sorted_ids[i - 1] == 1
             )
-            return sequential >= 2
+            return sequential >= 8
         return False
 
     def detect_any_sequential_ids(self, ip: str) -> str | None:
@@ -292,13 +292,13 @@ class SessionTracker:
                 path_ids[parts[0] + "/"].append(int(parts[1]))
 
         for prefix, ids in path_ids.items():
-            if len(ids) >= 3:
+            if len(ids) >= 10:
                 sorted_ids = sorted(set(ids))
                 sequential = sum(
                     1 for i in range(1, len(sorted_ids))
                     if sorted_ids[i] - sorted_ids[i - 1] == 1
                 )
-                if sequential >= 2:
+                if sequential >= 8:
                     return prefix
         return None
 
@@ -318,7 +318,7 @@ class SessionTracker:
             return True, len(not_found), sample_paths
         return False, 0, []
 
-    def detect_multi_resource_access(self, ip: str, threshold: int = 3) -> list[dict]:
+    def detect_multi_resource_access(self, ip: str, threshold: int = 10) -> list[dict]:
         """Detect one IP accessing many DIFFERENT resource IDs on the same endpoint.
         A normal user accesses their own resource; an attacker accesses many.
         Works for UUIDs, numeric IDs, or any varying path suffix.

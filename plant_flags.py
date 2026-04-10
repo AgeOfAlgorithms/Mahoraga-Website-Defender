@@ -34,12 +34,13 @@ def wait_for_services(max_wait=180):
     print("Waiting for crAPI...")
     for i in range(max_wait):
         try:
-            resp = requests.post(
-                f"{BASE}/identity/api/auth/login",
-                json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD},
+            # Use health check instead of login — admin password may be changed
+            resp = requests.get(
+                f"{BASE}/identity/api/auth/signup",
                 timeout=3,
             )
-            if resp.status_code == 200:
+            # Any response (even 405) means the service is up
+            if resp.status_code > 0:
                 print(f"  Ready after {i}s")
                 return True
         except requests.ConnectionError:
@@ -242,31 +243,165 @@ def plant_idor_report_flag():
     return False
 
 
-def plant_otp_victim_user():
-    """Create a user whose name IS the OTP flag."""
-    print("Planting OTP victim user...")
-    ok = signup_if_needed(
-        "XVEH{otp_reset_account_takeover_d14e}",
-        "flaguser.otp@example.com", "Fl4gUs3r!OTP", "5550001111",
-    )
-    print(f"  {'OK' if ok else 'FAILED'} — flaguser.otp@example.com")
-    return ok
+def plant_otp_victim_flag():
+    """Plant OTP flag in a pre-seeded user's vehicle VIN.
+
+    Uses pogba006@example.com — a user the attacker can discover via
+    community posts. Attacker must take over the account via OTP brute
+    force, then view their vehicle dashboard to find the flag in the VIN.
+    """
+    print("Planting OTP flag in Pogba's vehicle...")
+
+    user_id = docker_exec_psql(
+        "SELECT id FROM user_login WHERE email='pogba006@example.com'"
+    ).strip()
+    if not user_id:
+        print("  FAILED — pogba006 not found in DB")
+        return False
+
+    # Update Pogba's vehicle VIN to contain the flag
+    updated = docker_exec_psql(f"""
+        UPDATE vehicle_details SET vin='XVEH{{otp_reset_account_takeover_d14e}}'
+        WHERE owner_id={user_id}
+        RETURNING id
+    """).strip()
+    if updated:
+        print(f"  OK — flag in Pogba's vehicle VIN (vehicle ID={updated})")
+        return True
+
+    print("  FAILED — Pogba has no vehicle")
+    return False
 
 
 def plant_chatbot_flag_users():
-    """Create users whose names are chatbot flags."""
-    print("Planting chatbot flag users...")
+    """Plant chatbot flags in user data that's only accessible via chatbot exploitation.
+
+    Flags are stored in vehicle VIN fields — not in user names or emails,
+    so they don't leak via welcome emails or community post metadata.
+    The chatbot can be tricked into reading other users' vehicle details,
+    which is where the flags are.
+    """
+    print("Planting chatbot flags...")
+
+    # Create normal-looking users (names won't contain flags)
     ok1 = signup_if_needed(
-        "XVEH{chatbot_user_enum_data_leak_41ca}",
-        "flaguser.chatbot@example.com", "Fl4gUs3r!Chat", "5550002222",
+        "Casey Nguyen", "casey.nguyen@vehitrack.io", "Fl4gUs3r!Chat", "5550002222",
     )
     ok2 = signup_if_needed(
-        "XVEH{chatbot_cross_user_action_ee07}",
-        "flaguser.action@example.com", "Fl4gUs3r!Act", "5550003333",
+        "Morgan Torres", "morgan.torres@vehitrack.io", "Fl4gUs3r!Act", "5550003333",
     )
-    print(f"  chatbot leak: {'OK' if ok1 else 'FAIL'}")
-    print(f"  chatbot action: {'OK' if ok2 else 'FAIL'}")
-    return ok1 and ok2
+
+    if not ok1 or not ok2:
+        print(f"  chatbot users: {'OK' if ok1 else 'FAIL'} / {'OK' if ok2 else 'FAIL'}")
+        return False
+
+    # Plant flags in their vehicle VINs (visible when chatbot leaks vehicle data)
+    # The chatbot data leak flag: attacker tricks chatbot into listing users' vehicles
+    user1_id = docker_exec_psql(
+        "SELECT id FROM user_login WHERE email='casey.nguyen@vehitrack.io'"
+    ).strip()
+    if user1_id:
+        existing = docker_exec_psql(
+            f"SELECT COUNT(*) FROM vehicle_details WHERE owner_id={user1_id}"
+        ).strip()
+        if int(existing) == 0:
+            next_id = docker_exec_psql(
+                "SELECT COALESCE(MAX(id), 199) + 1 FROM vehicle_details WHERE id >= 200"
+            ).strip()
+            vid = int(next_id)
+            docker_exec_psql(f"""
+                INSERT INTO vehicle_location (id, latitude, longitude)
+                VALUES ({vid}, '40.7128', '-74.0060') ON CONFLICT (id) DO NOTHING
+            """)
+            docker_exec_psql(f"""
+                INSERT INTO vehicle_details (id, pincode, status, uuid, vin, year,
+                                             vehicle_model_id, owner_id, location_id)
+                VALUES ({vid}, '0000', 1, gen_random_uuid(),
+                        'XVEH{{chatbot_user_enum_data_leak_41ca}}', 2025, 1, {user1_id}, {vid})
+                ON CONFLICT (id) DO NOTHING
+            """)
+            print(f"  chatbot leak flag: OK — in vehicle VIN for casey.nguyen (ID={vid})")
+        else:
+            # Update existing vehicle VIN
+            docker_exec_psql(f"""
+                UPDATE vehicle_details SET vin='XVEH{{chatbot_user_enum_data_leak_41ca}}'
+                WHERE owner_id={user1_id} AND vin NOT LIKE 'XVEH%'
+            """)
+            print("  chatbot leak flag: OK — updated vehicle VIN")
+    else:
+        print("  chatbot leak flag: FAILED — user not found")
+
+    # The chatbot action flag: attacker tricks chatbot into acting on another user's behalf
+    user2_id = docker_exec_psql(
+        "SELECT id FROM user_login WHERE email='morgan.torres@vehitrack.io'"
+    ).strip()
+    if user2_id:
+        existing = docker_exec_psql(
+            f"SELECT COUNT(*) FROM vehicle_details WHERE owner_id={user2_id}"
+        ).strip()
+        if int(existing) == 0:
+            next_id = docker_exec_psql(
+                "SELECT COALESCE(MAX(id), 199) + 1 FROM vehicle_details WHERE id >= 200"
+            ).strip()
+            vid = int(next_id)
+            docker_exec_psql(f"""
+                INSERT INTO vehicle_location (id, latitude, longitude)
+                VALUES ({vid}, '34.0522', '-118.2437') ON CONFLICT (id) DO NOTHING
+            """)
+            docker_exec_psql(f"""
+                INSERT INTO vehicle_details (id, pincode, status, uuid, vin, year,
+                                             vehicle_model_id, owner_id, location_id)
+                VALUES ({vid}, '0000', 1, gen_random_uuid(),
+                        'XVEH{{chatbot_cross_user_action_ee07}}', 2025, 2, {user2_id}, {vid})
+                ON CONFLICT (id) DO NOTHING
+            """)
+            print(f"  chatbot action flag: OK — in vehicle VIN for morgan.torres (ID={vid})")
+        else:
+            docker_exec_psql(f"""
+                UPDATE vehicle_details SET vin='XVEH{{chatbot_cross_user_action_ee07}}'
+                WHERE owner_id={user2_id} AND vin NOT LIKE 'XVEH%'
+            """)
+            print("  chatbot action flag: OK — updated vehicle VIN")
+    else:
+        print("  chatbot action flag: FAILED — user not found")
+
+    return True
+
+
+def _post_community_breadcrumbs():
+    """Have flag users post in the community so attackers can discover them."""
+    posts = [
+        ("casey.nguyen@vehitrack.io", "Fl4gUs3r!Chat",
+         "Charging station issue",
+         "Has anyone else had trouble with the Level 2 charger at the downtown garage? "
+         "My vehicle keeps disconnecting mid-charge."),
+        ("morgan.torres@vehitrack.io", "Fl4gUs3r!Act",
+         "Tire pressure warning",
+         "Getting a persistent low tire pressure warning even after inflating to spec. "
+         "Already booked a service appointment but wanted to check if this is common."),
+    ]
+    for email, password, title, content in posts:
+        token = login(email, password)
+        if not token:
+            print(f"  {email}: SKIP — cannot login")
+            continue
+
+        resp = requests.get(
+            f"{BASE}/community/api/v2/community/posts/recent",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        if resp.status_code == 200:
+            existing = resp.json().get("posts", [])
+            if any(p.get("title") == title for p in existing):
+                print(f"  {email}: already posted")
+                continue
+
+        resp = requests.post(
+            f"{BASE}/community/api/v2/community/posts",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"title": title, "content": content},
+        )
+        print(f"  {email}: {'OK' if resp.status_code in (200, 201) else 'FAIL'}")
 
 
 def main():
@@ -281,7 +416,7 @@ def main():
     results = {
         "bola_vehicle": plant_bola_vehicle_flag(),
         "idor_report": plant_idor_report_flag(),
-        "otp_victim": plant_otp_victim_user(),
+        "otp_victim": plant_otp_victim_flag(),
         "chatbot_flags": plant_chatbot_flag_users(),
     }
 
@@ -289,6 +424,11 @@ def main():
     print("=" * 50)
     for name, ok in results.items():
         print(f"  {'OK' if ok else 'FAIL'}: {name}")
+
+    # Post community content from flag users so attackers can discover them
+    print()
+    print("Making flag users discoverable via community posts...")
+    _post_community_breadcrumbs()
 
     print()
     print("All flags are planted. Run again safely at any time.")

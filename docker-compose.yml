@@ -51,6 +51,7 @@ services:
       retries: 15
     networks:
       - defender-net
+      - mail-net
 
   crapi-community:
     build: ./crapi-fork/services/community
@@ -206,6 +207,7 @@ services:
         condition: service_healthy
     networks:
       - defender-net
+      - mail-net
 
   api.mypremiumdealership.com:
     build: ./crapi-fork/services/gateway-service
@@ -278,10 +280,10 @@ services:
   mailhog:
     image: mailhog/mailhog
     container_name: mailhog
-    # No ports exposed — internal only. Attackers must brute-force OTPs,
-    # not read them from MailHog.
+    # Isolated network — only identity services can reach MailHog.
+    # Not on defender-net, so SSRF from workshop can't reach it.
     networks:
-      - defender-net
+      - mail-net
 
   # ── Defender infrastructure ─────────────────────────────────────
   nginx:
@@ -449,6 +451,7 @@ services:
       retries: 15
     networks:
       - defender-net
+      - mail-net
 
   shadow-community:
     image: reactive_defender-crapi-community:latest
@@ -539,6 +542,7 @@ services:
         condition: service_healthy
     networks:
       - defender-net
+      - mail-net
 
 volumes:
   postgresql-data:
@@ -550,3 +554,6 @@ volumes:
 networks:
   defender-net:
     driver: bridge
+  mail-net:
+    driver: bridge
+    internal: true  # no external access

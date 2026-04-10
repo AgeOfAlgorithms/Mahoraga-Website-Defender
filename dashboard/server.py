@@ -92,35 +92,38 @@ async def get_status():
 async def get_vulns():
     """Return known vulnerability chains and their patch status."""
     # Known chains from chain_detector.py
+    # One card per flag — 12 flags, 12 cards
     chains = [
-        {"id": "bola_data_access", "name": "BOLA Data Access", "severity": "high",
-         "description": "Access other users' vehicle data via IDOR"},
+        {"id": "bola_vehicle", "name": "BOLA Vehicle GPS", "severity": "high",
+         "description": "Access other users' vehicle location data"},
+        {"id": "bola_reports", "name": "BOLA Mechanic Reports", "severity": "high",
+         "description": "Read other users' mechanic service reports"},
         {"id": "otp_bypass", "name": "OTP Bypass", "severity": "critical",
          "description": "Brute-force OTP to take over accounts"},
         {"id": "idor_account_takeover", "name": "IDOR Account Takeover", "severity": "critical",
-         "description": "Escalate to admin via user ID enumeration"},
+         "description": "Escalate to admin via report enumeration"},
         {"id": "jwt_forgery", "name": "JWT Forgery", "severity": "critical",
          "description": "Forge JWT with algorithm confusion"},
         {"id": "ssrf_internal", "name": "SSRF Internal", "severity": "high",
          "description": "Map internal services via SSRF"},
         {"id": "sqli_coupon", "name": "SQL Injection (Coupon)", "severity": "critical",
          "description": "SQL injection via coupon endpoint"},
-        {"id": "mass_assignment", "name": "Mass Assignment", "severity": "high",
-         "description": "Modify protected fields via mass assignment"},
         {"id": "refund_abuse", "name": "Refund Abuse", "severity": "medium",
          "description": "Manipulate order quantities for negative balance"},
         {"id": "video_delete", "name": "Cross-User Video Delete", "severity": "high",
          "description": "Delete other users' videos via BOLA"},
         {"id": "chatbot_leak", "name": "Chatbot Data Leak", "severity": "high",
          "description": "Extract PII via chatbot prompt injection"},
+        {"id": "chatbot_action", "name": "Chatbot Cross-User Action", "severity": "high",
+         "description": "Trick chatbot into acting on another user's behalf"},
         {"id": "api_key_leak", "name": "API Key Leak", "severity": "medium",
          "description": "Discover exposed API keys"},
     ]
 
-    # Map scoreboard chain names → vuln card IDs
+    # Map scoreboard chain names → vuln card IDs (1:1 now)
     chain_to_vuln = {
-        "bola_vehicle": "bola_data_access",
-        "bola_reports": "bola_data_access",
+        "bola_vehicle": "bola_vehicle",
+        "bola_reports": "bola_reports",
         "otp_bruteforce": "otp_bypass",
         "idor_account_takeover": "idor_account_takeover",
         "jwt_algorithm_confusion": "jwt_forgery",
@@ -130,7 +133,7 @@ async def get_vulns():
         "video_delete": "video_delete",
         "coupon_injection": "sqli_coupon",
         "chatbot_data_leak": "chatbot_leak",
-        "chatbot_cross_user_action": "chatbot_leak",
+        "chatbot_cross_user_action": "chatbot_action",
     }
 
     # Fetch scoreboard from vuln-chains service
@@ -279,29 +282,45 @@ manager = ConnectionManager()
 
 
 async def tail_file(path: Path, parser, msg_type: str):
-    """Tail a log file and broadcast new lines."""
+    """Tail a log file and broadcast new lines.
+    Reopens the file each cycle to pick up writes from other containers."""
+    position = 0
+
+    # Start at end of file
+    if path.exists():
+        position = path.stat().st_size
+
     while True:
         if not path.exists():
             await asyncio.sleep(2)
             continue
 
         try:
-            with open(path, "r") as f:
-                f.seek(0, 2)  # Seek to end
-                while True:
-                    line = f.readline()
+            current_size = path.stat().st_size
+
+            # File was truncated (log rotation / reset)
+            if current_size < position:
+                position = 0
+
+            if current_size > position:
+                with open(path, "r") as f:
+                    f.seek(position)
+                    new_data = f.read()
+                    position = f.tell()
+
+                for line in new_data.splitlines():
+                    line = line.strip()
                     if line:
-                        parsed = parser(line.strip())
+                        parsed = parser(line)
                         if parsed:
                             await manager.broadcast({
                                 "type": msg_type,
                                 "data": parsed,
                             })
-                    else:
-                        await asyncio.sleep(0.5)
         except Exception as e:
             logger.error("tail_file error for %s: %s", path, e)
-            await asyncio.sleep(2)
+
+        await asyncio.sleep(1)
 
 
 async def watch_json_dir(directory: Path, msg_type: str):

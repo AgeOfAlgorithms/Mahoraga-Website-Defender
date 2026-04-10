@@ -63,12 +63,23 @@ SEVERITY_POINTS = {
     "low": 2,
 }
 
+# Score TTL by severity — how long before a score decays
+SEVERITY_TTL = {
+    "critical": 120,   # 2 minutes
+    "high": 60,        # 1 minute
+    "medium": 30,      # 1 minute
+    "low": 15,         # 1 minute
+}
+
+SHADOW_REDIRECT_TTL = 300  # 5 minutes — how long a redirect persists
+
 
 @app.post("/control/session/score")
 async def add_score(event: ScoreEvent):
     """Add threat score to a session. Identified by token and/or JA3.
     When score exceeds threshold, the session is marked for shadow redirect."""
     points = event.points or SEVERITY_POINTS.get(event.severity, 5)
+    ttl = SEVERITY_TTL.get(event.severity, 60)
     identifiers = []
     now = time.time()
 
@@ -76,25 +87,25 @@ async def add_score(event: ScoreEvent):
     if event.token:
         key = f"score:token:{event.token}"
         new_score = await pool.incrbyfloat(key, points)
-        await pool.expire(key, 3600)  # scores decay after 1 hour
+        await pool.expire(key, ttl)
         identifiers.append(("token", event.token[:30], new_score))
 
         # Log the detection event
         await pool.rpush(f"events:token:{event.token}",
                          f"{now}|{event.event_type}|{event.severity}|{points}")
-        await pool.expire(f"events:token:{event.token}", 3600)
+        await pool.expire(f"events:token:{event.token}", ttl)
 
     # Score by JA3 (persists across token changes)
     if event.ja3:
         key = f"score:ja3:{event.ja3}"
         new_score = await pool.incrbyfloat(key, points)
-        await pool.expire(key, 7200)  # JA3 scores last longer
+        await pool.expire(key, ttl)
         identifiers.append(("ja3", event.ja3, new_score))
 
         # Link JA3 to token for cross-reference
         if event.token:
-            await pool.setex(f"ja3_token:{event.ja3}", 7200, event.token)
-            await pool.setex(f"token_ja3:{event.token}", 7200, event.ja3)
+            await pool.setex(f"ja3_token:{event.ja3}", ttl, event.token)
+            await pool.setex(f"token_ja3:{event.token}", ttl, event.ja3)
 
     # Check if any identifier crossed the redirect threshold
     redirected = False
@@ -121,11 +132,11 @@ async def _redirect_session(trigger_type: str, trigger_value: str,
 
     # Mark the token for shadow redirect
     if token:
-        await pool.setex(f"shadow:token:{token}", 86400, now)
+        await pool.setex(f"shadow:token:{token}", SHADOW_REDIRECT_TTL, now)
 
     # Mark the JA3 so new tokens from same tool also get redirected
     if ja3:
-        await pool.setex(f"shadow:ja3:{ja3}", 86400, now)
+        await pool.setex(f"shadow:ja3:{ja3}", SHADOW_REDIRECT_TTL, now)
 
     # Log the redirect event
     await pool.rpush("shadow:redirect_log",
@@ -148,7 +159,7 @@ async def check_session(request: Request):
     if ja3 and await pool.exists(f"shadow:ja3:{ja3}"):
         # Also flag the current token so future checks are faster
         if token:
-            await pool.setex(f"shadow:token:{token}", 86400, str(time.time()))
+            await pool.setex(f"shadow:token:{token}", SHADOW_REDIRECT_TTL, str(time.time()))
         return {"target": "shadow", "reason": "ja3_flagged"}
 
     return {"target": "prod"}
@@ -294,31 +305,3 @@ async def system_status():
     }
 
 
-# ══════════════════════════════════════════════════════════════════
-# INTERNAL SERVICE ENDPOINTS (reachable via SSRF only)
-# ══════════════════════════════════════════════════════════════════
-
-@app.get("/internal/fleet-status")
-async def internal_fleet_status():
-    """Internal fleet monitoring endpoint.
-    Not exposed through nginx — only reachable via SSRF from within
-    the Docker network (e.g., via contact_mechanic SSRF)."""
-    return {
-        "service": "VehiTrack Fleet Monitor",
-        "version": "3.2.1-internal",
-        "fleet": {
-            "total_vehicles": 847,
-            "active_tracking": 623,
-            "offline": 224,
-            "maintenance": 31,
-        },
-        "connected_services": [
-            {"name": "crapi-identity", "port": 8080, "status": "healthy"},
-            {"name": "crapi-workshop", "port": 8000, "status": "healthy"},
-            {"name": "crapi-community", "port": 8087, "status": "healthy"},
-            {"name": "postgresdb", "port": 5432, "status": "healthy"},
-            {"name": "mongodb", "port": 27017, "status": "healthy"},
-        ],
-        "_internal_ref": "XVEH{internal_net_mapped_91fa}",
-        "_note": "This endpoint is for internal service mesh monitoring only.",
-    }

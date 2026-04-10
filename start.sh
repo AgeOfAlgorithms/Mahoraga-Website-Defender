@@ -5,18 +5,24 @@ echo "=== Mahoraga Defender Agent ==="
 echo ""
 
 # Start all services
-echo "[1/3] Starting services..."
+echo "[1/4] Starting services..."
 docker compose up -d --build
 
 # Wait for crAPI to be healthy
-echo "[2/3] Waiting for crAPI to be ready..."
+echo "[2/4] Waiting for crAPI to be ready..."
 until docker compose ps crapi-workshop | grep -q "healthy"; do
+    sleep 2
+done
+until docker compose ps shadow-workshop | grep -q "healthy"; do
     sleep 2
 done
 
 # Plant flags (idempotent)
-echo "[3/3] Planting flags..."
+echo "[3/4] Planting prod flags..."
 python3 plant_flags.py
+
+echo "[4/4] Planting shadow decoy flags..."
+python3 plant_shadow_flags.py
 
 echo ""
 echo "=== Ready ==="

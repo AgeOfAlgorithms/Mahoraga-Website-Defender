@@ -165,6 +165,7 @@ export default function App() {
                     await fetch("/api/reset/scoreboard", { method: "POST" });
                     setProdLogs([]); setShadowLogs([]); setEvents([]); setAudit([]); setPatches([]);
                     fetch("/api/status").then(r => r.json()).then(setStatus).catch(() => {});
+                    fetch("/api/vulns").then(r => r.json()).then(setVulns).catch(() => {});
                     setResetOpen(false);
                   }}
                   className="w-full text-left px-3 py-2 text-xs text-red-400 hover:bg-red-900/30 hover:text-red-300 font-medium">
