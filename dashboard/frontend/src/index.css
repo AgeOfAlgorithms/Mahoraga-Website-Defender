@@ -1,0 +1,24 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom scrollbar for dark theme */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #1a1a2e; }
+::-webkit-scrollbar-thumb { background: #4a4a6a; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #6a6a8a; }
+
+/* Log entry animation */
+@keyframes slideIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.log-entry-new { animation: slideIn 0.2s ease-out; }
+
+/* Kanban card hover */
+.kanban-card { transition: transform 0.15s, box-shadow 0.15s; }
+.kanban-card:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+
+/* Diff styling */
+.diff-add { background: rgba(34, 197, 94, 0.15); }
+.diff-remove { background: rgba(239, 68, 68, 0.15); }

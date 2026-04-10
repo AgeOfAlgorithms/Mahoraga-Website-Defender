@@ -325,6 +325,25 @@ services:
     networks:
       - defender-net
 
+  dashboard:
+    build: ./dashboard
+    container_name: dashboard
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./logs:/data/logs:ro
+      - ./events:/data/events:ro
+      - ./audit:/data/audit:ro
+      - ./patches:/data/patches:ro
+      - ./detection:/data/detection:ro
+    environment:
+      - DATA_ROOT=/data
+      - CONTROL_PLANE_URL=http://control-plane:9090
+    depends_on:
+      - control-plane
+    networks:
+      - defender-net
+
   redis:
     image: redis:7-alpine
     container_name: defender-redis

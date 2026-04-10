@@ -22,6 +22,10 @@ crapi-fork/
 # Docker
 *.tar
 
+# Dashboard frontend build
+dashboard/frontend/node_modules/
+dashboard/frontend/dist/
+
 # IDE
 .vscode/
 .idea/
