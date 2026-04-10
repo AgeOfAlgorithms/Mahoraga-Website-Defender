@@ -38,6 +38,11 @@ refactors code, adds type hints, or makes any change not directly needed \
 for this specific fix. The patch must be laser-focused.
 5. Are the rollback steps adequate?
 
+## OFF-LIMITS — do NOT read these files/directories
+vuln_chains/, plant_flags.py, plant_shadow_flags.py, harness/, detection/,
+config/, dashboard/, docker-compose.yml, start.sh, .env files.
+Only review the application source code that was modified by the patch.
+
 ## Response format (JSON only, no markdown fencing)
 {{
   "approved": true/false,

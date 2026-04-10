@@ -8,10 +8,6 @@ CRITICAL CONSTRAINTS:
 Deployment targets:
 - Workshop (Python/Django): mounted volume at ./crapi-fork/services/workshop/
   → container reads from /app/ → Django auto-reloads on file change (~2s)
-- Vuln chains (Python): mounted volume at ./vuln_chains/
-  → container reads from /app/ → uvicorn auto-reloads (~1s)
-- Control plane (Python): mounted volume at ./control_plane/
-  → container reads from /app/ → uvicorn auto-reloads (~1s)
 - Identity (Java): source at ./crapi-fork/services/identity/
   → requires rebuild + restart (not hot-patchable)
 - Community (Go): source at ./crapi-fork/services/community/
@@ -47,14 +43,22 @@ web application. Your edits will be applied to the live service immediately.
 ## Editable paths (these are mounted into running containers)
 - Workshop (Python/Django): {workshop_dir}/crapi/
   Hot-reloads automatically on save.
-- Custom vuln chains (Python): {vuln_chains_dir}/chains/
-  Hot-reloads automatically on save.
 - Nginx config: {nginx_dir}/nginx.conf
   Requires restart after edit.
 - Identity (Java): {identity_dir}/src/main/java/com/crapi/
   Requires rebuild — edit only if absolutely necessary.
 - Community (Go): {community_dir}/api/
   Requires rebuild — edit only if absolutely necessary.
+
+## OFF-LIMITS — do NOT read or modify these files/directories
+- vuln_chains/ (challenge infrastructure — not part of the application)
+- plant_flags.py, plant_shadow_flags.py (test data)
+- harness/ (defender agent code)
+- detection/ (detection rules)
+- config/ (defender configuration)
+- dashboard/ (monitoring UI)
+- docker-compose.yml, start.sh, .env files
+Reading any of these files is forbidden and will invalidate the patch.
 
 ## STRICT RULES
 1. Fix ONLY the vulnerability described above — NOTHING else
@@ -64,9 +68,10 @@ web application. Your edits will be applied to the live service immediately.
 5. Make the MINIMUM change necessary to close this vulnerability
 6. PREFER editing Python files (hot-reload) over Java/Go (needs rebuild)
 7. If the fix is in Java or Go, set needs_rebuild to true
+8. Do NOT search for or read flag values, challenge descriptions, or test data
 
 ## Your task
-1. Read the source files relevant to the exploit
+1. Read the source files relevant to the exploit (application code only)
 2. Identify the exact lines that cause the vulnerability
 3. Edit ONLY those lines
 4. Report what you changed
@@ -97,7 +102,6 @@ class Fixer:
         self.cost_governor = cost_governor
         self.project_dir = Path(project_dir)
         self.workshop_dir = self.project_dir / "crapi-fork" / "services" / "workshop"
-        self.vuln_chains_dir = self.project_dir / "vuln_chains"
         self.nginx_dir = self.project_dir / "nginx"
         self.identity_dir = self.project_dir / "crapi-fork" / "services" / "identity"
         self.community_dir = self.project_dir / "crapi-fork" / "services" / "community"
@@ -112,7 +116,6 @@ class Fixer:
         prompt = FIX_PROMPT.format(
             triage_json=triage_json,
             workshop_dir=self.workshop_dir,
-            vuln_chains_dir=self.vuln_chains_dir,
             nginx_dir=self.nginx_dir,
             identity_dir=self.identity_dir,
             community_dir=self.community_dir,
