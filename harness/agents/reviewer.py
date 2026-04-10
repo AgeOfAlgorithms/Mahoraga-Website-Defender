@@ -80,10 +80,10 @@ class Reviewer:
         prompt = REVIEW_PROMPT.format(triage_json=triage_json, patch_json=patch_json)
 
         options = ClaudeAgentOptions(
-            system_prompt="You are a strict security reviewer. Respond with JSON only.",
-            max_turns=2,
-            allowed_tools=["Read", "Glob", "Grep"],
-            cwd=self.project_dir,
+            system_prompt="You are a strict security reviewer. Respond with JSON only. "
+                          "Use docker exec to verify patches inside containers if needed.",
+            max_turns=3,
+            allowed_tools=["Bash"],
         )
 
         response_text = ""

@@ -1,30 +1,24 @@
-"""Fixer agent — patches the specific vulnerability in the RUNNING containers.
+"""Fixer agent — patches vulnerabilities inside RUNNING containers only.
 
-CRITICAL CONSTRAINTS:
-1. Only fix the SINGLE vulnerability described in the triage report
-2. Edit files that the running containers actually serve from
-3. Do NOT fix other bugs found along the way
+CRITICAL: The fixer NEVER modifies source code on the host. All edits
+happen inside Docker containers via `docker exec`. Changes are ephemeral
+and lost when containers restart — source code stays clean.
 
-Deployment targets:
-- Workshop (Python/Django): mounted volume at ./crapi-fork/services/workshop/
-  → container reads from /app/ → Django auto-reloads on file change (~2s)
-- Identity (Java): source at ./crapi-fork/services/identity/
-  → requires rebuild + restart (not hot-patchable)
-- Community (Go): source at ./crapi-fork/services/community/
-  → requires rebuild + restart (not hot-patchable)
-- Nginx: config at ./nginx/nginx.conf
-  → requires `docker compose restart nginx` (~1s)
+Patchable containers:
+- crapi-workshop (Python/Django): edits /app/crapi/ → auto-reloads
+- nginx-proxy (OpenResty): edits /usr/local/openresty/nginx/conf/ → needs reload
 
-For Java/Go services, the Fixer edits source and flags that a rebuild is needed.
-The orchestrator handles the rebuild + restart.
+Non-patchable (would need rebuild):
+- crapi-identity (Java): compiled JAR, can't hot-patch
+- crapi-community (Go): compiled binary, can't hot-patch
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import subprocess
 from dataclasses import asdict
-from pathlib import Path
 
 from claude_agent_sdk import query, ClaudeAgentOptions, AssistantMessage, TextBlock
 
@@ -35,45 +29,65 @@ logger = logging.getLogger(__name__)
 
 FIX_PROMPT = """\
 You are a security engineer patching ONE specific vulnerability in a RUNNING
-web application. Your edits will be applied to the live service immediately.
+web application. You will read and edit files INSIDE Docker containers — never
+on the host filesystem.
 
 ## Exploit Report (from shadow environment)
 {triage_json}
 
-## Editable paths (these are mounted into running containers)
-- Workshop (Python/Django): {workshop_dir}/crapi/
-  Hot-reloads automatically on save.
-- Nginx config: {nginx_dir}/nginx.conf
-  Requires restart after edit.
-- Identity (Java): {identity_dir}/src/main/java/com/crapi/
-  Requires rebuild — edit only if absolutely necessary.
-- Community (Go): {community_dir}/api/
-  Requires rebuild — edit only if absolutely necessary.
+## How to read files inside containers
+Use the Bash tool to run docker exec commands:
+```
+docker exec crapi-workshop cat /app/crapi/shop/views.py
+docker exec crapi-workshop grep -n "vulnerable_pattern" /app/crapi/mechanic/views.py
+docker exec nginx-proxy cat /usr/local/openresty/nginx/conf/nginx.conf
+```
 
-## OFF-LIMITS — do NOT read or modify these files/directories
-- vuln_chains/ (challenge infrastructure — not part of the application)
-- plant_flags.py, plant_shadow_flags.py (test data)
-- harness/ (defender agent code)
-- detection/ (detection rules)
-- config/ (defender configuration)
-- dashboard/ (monitoring UI)
-- docker-compose.yml, start.sh, .env files
-Reading any of these files is forbidden and will invalidate the patch.
+## How to apply patches inside containers
+Use docker exec with sed or python to edit files in-place:
+```
+docker exec crapi-workshop sed -i 's/old_code/new_code/' /app/crapi/shop/views.py
+docker exec crapi-workshop python3 -c "
+import pathlib
+p = pathlib.Path('/app/crapi/shop/views.py')
+code = p.read_text()
+code = code.replace('vulnerable_line', 'fixed_line')
+p.write_text(code)
+"
+```
+
+For nginx, edit the config then reload:
+```
+docker exec nginx-proxy sed -i 's/old_config/new_config/' /usr/local/openresty/nginx/conf/nginx.conf
+docker exec nginx-proxy nginx -s reload
+```
+
+## Patchable containers
+- **crapi-workshop** (Python/Django at /app/crapi/): auto-reloads on file change
+- **nginx-proxy** (OpenResty at /usr/local/openresty/nginx/conf/): needs `nginx -s reload`
+
+## NOT patchable (skip these)
+- crapi-identity (Java JAR — can't hot-patch)
+- crapi-community (Go binary — can't hot-patch)
+
+## OFF-LIMITS — do NOT access
+- Any file on the host filesystem
+- vuln_chains/, plant_flags.py, harness/, detection/, config/, dashboard/
+- Flag values, challenge descriptions, or test data
+- Other containers' data (postgresdb, mongodb, redis)
 
 ## STRICT RULES
 1. Fix ONLY the vulnerability described above — NOTHING else
 2. Do NOT fix other bugs or vulnerabilities you notice
 3. Do NOT refactor, add comments, add type hints, or improve code quality
-4. Do NOT add error handling beyond what's needed for this specific fix
-5. Make the MINIMUM change necessary to close this vulnerability
-6. PREFER editing Python files (hot-reload) over Java/Go (needs rebuild)
-7. If the fix is in Java or Go, set needs_rebuild to true
-8. Do NOT search for or read flag values, challenge descriptions, or test data
+4. Make the MINIMUM change necessary to close this vulnerability
+5. ALL file reads and edits must use `docker exec` — never direct file access
+6. Do NOT search for or read flag values
 
 ## Your task
-1. Read the source files relevant to the exploit (application code only)
+1. Read the relevant source files inside the container
 2. Identify the exact lines that cause the vulnerability
-3. Edit ONLY those lines
+3. Edit ONLY those lines inside the container
 4. Report what you changed
 
 ## Response format (JSON only, no markdown fencing)
@@ -81,10 +95,10 @@ Reading any of these files is forbidden and will invalidate the patch.
   "patch_type": "code_fix",
   "description": "one sentence describing the fix",
   "vulnerability": "what was wrong",
-  "files_modified": ["relative paths of files you edited"],
-  "needs_rebuild": false,
-  "needs_restart": ["list of services that need restart, e.g. nginx"],
-  "changes_summary": "what specifically was changed"
+  "container": "which container was patched",
+  "files_modified": ["paths inside the container"],
+  "changes_summary": "what specifically was changed",
+  "rollback": "docker restart <container_name>"
 }}
 """
 
@@ -92,44 +106,29 @@ CODE_FIX_COST_ESTIMATE = 0.15
 
 
 class Fixer:
-    """Patches the specific vulnerability in running containers."""
+    """Patches vulnerabilities inside running containers via docker exec."""
 
-    def __init__(
-        self,
-        cost_governor: CostGovernor,
-        project_dir: str = ".",
-    ):
+    def __init__(self, cost_governor: CostGovernor):
         self.cost_governor = cost_governor
-        self.project_dir = Path(project_dir)
-        self.workshop_dir = self.project_dir / "crapi-fork" / "services" / "workshop"
-        self.nginx_dir = self.project_dir / "nginx"
-        self.identity_dir = self.project_dir / "crapi-fork" / "services" / "identity"
-        self.community_dir = self.project_dir / "crapi-fork" / "services" / "community"
 
     async def generate_patch(self, triage: TriageResult) -> PatchProposal | None:
-        """Generate and apply a patch for the exploited vulnerability."""
+        """Generate and apply a patch inside running containers."""
         if not self.cost_governor.can_spend(triage.event_id, CODE_FIX_COST_ESTIMATE):
             logger.warning("Budget exceeded, cannot patch for %s", triage.event_id)
             return None
 
         triage_json = json.dumps(asdict(triage), indent=2, default=str)
-        prompt = FIX_PROMPT.format(
-            triage_json=triage_json,
-            workshop_dir=self.workshop_dir,
-            nginx_dir=self.nginx_dir,
-            identity_dir=self.identity_dir,
-            community_dir=self.community_dir,
-        )
+        prompt = FIX_PROMPT.format(triage_json=triage_json)
 
         options = ClaudeAgentOptions(
             system_prompt=(
                 "You are a security engineer. Fix ONLY the specific vulnerability "
-                "described in the triage report. Do NOT fix anything else. "
-                "Make the minimum change necessary. Respond with JSON only."
+                "described in the triage report. All file access must be through "
+                "docker exec commands — never read or write files directly. "
+                "Respond with JSON only after applying the fix."
             ),
-            max_turns=10,
-            allowed_tools=["Read", "Edit", "Glob", "Grep"],
-            cwd=str(self.project_dir),
+            max_turns=15,
+            allowed_tools=["Bash"],
         )
 
         response_text = ""
@@ -154,21 +153,19 @@ class Fixer:
             logger.error("Failed to parse fixer response: %s", response_text[:200])
             return None
 
+        container = data.get("container", "unknown")
         files_modified = data.get("files_modified", [])
-        needs_rebuild = data.get("needs_rebuild", False)
-        needs_restart = data.get("needs_restart", [])
 
-        if needs_rebuild:
-            logger.warning("Patch requires rebuild of: %s", needs_restart)
-
-        if needs_restart:
-            logger.info("Patch requires restart of: %s", needs_restart)
+        logger.info(
+            "Patch applied in container %s: %s (%s)",
+            container, data.get("description", ""), files_modified,
+        )
 
         return PatchProposal(
             event_id=triage.event_id,
             patch_type=data.get("patch_type", "code_fix"),
             description=data.get("description", ""),
-            diff="",
+            diff=data.get("changes_summary", ""),
             files_modified=files_modified,
-            rollback_steps=f"git checkout -- {' '.join(files_modified)}",
+            rollback_steps=data.get("rollback", f"docker restart {container}"),
         )

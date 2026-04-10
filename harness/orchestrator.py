@@ -83,10 +83,7 @@ class Orchestrator:
             extra_log_dir=project_dir / "logs",
         )
         self.analyzer = Analyzer(self.cost_governor, str(project_dir))
-        self.fixer = Fixer(
-            self.cost_governor,
-            project_dir=str(project_dir),
-        )
+        self.fixer = Fixer(self.cost_governor)
         self.reviewer = Reviewer(self.cost_governor, str(project_dir))
         self.tester = Tester(self.cost_governor, app_url, str(project_dir))
 
