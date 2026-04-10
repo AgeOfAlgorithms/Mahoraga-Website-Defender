@@ -198,54 +198,24 @@ ENDPOINT_PROFILES: list[EndpointProfile] = [
         attack_type="unauthorized_access",
     ),
 
-    # ── Vuln chain: API key brute force ───────────────────────────
+    # ── Management dashboard (admin JWT required) ──────────────────
     EndpointProfile(
-        path_pattern=re.compile(r"^/chains/apikeys/debug/"),
-        normal_methods=set(),  # no normal user should access debug endpoints
-        normal_rate_per_min=0,
+        path_pattern=re.compile(r"^/workshop/api/management/dashboard"),
+        normal_methods={"GET"},
+        normal_rate_per_min=3,
+        suspicious_signals=["no_auth_header", "malformed_jwt"],
+        severity=Severity.HIGH,
+        attack_type="admin_dashboard_access",
+    ),
+
+    # ── Management keys (API key required) ────────────────────────
+    EndpointProfile(
+        path_pattern=re.compile(r"^/workshop/api/management/keys"),
+        normal_methods={"GET"},
+        normal_rate_per_min=3,
         suspicious_signals=["any_access"],
         severity=Severity.HIGH,
-        attack_type="debug_endpoint_access",
-        is_honeypot=True,
-    ),
-    EndpointProfile(
-        path_pattern=re.compile(r"^/chains/apikeys/debug/dump"),
-        normal_methods=set(),
-        normal_rate_per_min=0,
-        suspicious_signals=["brute_force_token"],
-        severity=Severity.CRITICAL,
-        attack_type="api_key_brute_force",
-        is_honeypot=True,
-    ),
-
-    # ── Vuln chain: IDOR enumeration ──────────────────────────────
-    EndpointProfile(
-        path_pattern=re.compile(r"^/chains/idor/users/\d+"),
-        normal_methods={"GET"},
-        normal_rate_per_min=5,
-        suspicious_signals=["sequential_ids", "rate_exceeded"],
-        severity=Severity.HIGH,
-        attack_type="idor_user_enumeration",
-    ),
-
-    # ── Vuln chain: JWT .well-known recon ─────────────────────────
-    EndpointProfile(
-        path_pattern=re.compile(r"^/chains/jwt/\.well-known"),
-        normal_methods={"GET"},
-        normal_rate_per_min=2,
-        suspicious_signals=["any_access"],  # recon signal
-        severity=Severity.MEDIUM,
-        attack_type="jwt_recon",
-    ),
-
-    # ── Vuln chain: SSRF ─────────────────────────────────────────
-    EndpointProfile(
-        path_pattern=re.compile(r"^/chains/ssrf/fetch"),
-        normal_methods={"GET"},
-        normal_rate_per_min=5,
-        suspicious_signals=["internal_url_in_params", "port_scanning_pattern"],
-        severity=Severity.CRITICAL,
-        attack_type="ssrf_attempt",
+        attack_type="api_key_access",
     ),
 ]
 

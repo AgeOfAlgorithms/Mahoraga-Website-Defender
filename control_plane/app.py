@@ -49,7 +49,7 @@ async def shutdown():
 class ScoreEvent(BaseModel):
     """Watcher sends these when it detects suspicious activity."""
     token: str = ""          # auth token from the request (if present)
-    ja3: str = ""            # TLS fingerprint (from nginx $ssl_ja3_hash)
+    ja3: str = ""            # IP:UserAgent composite fingerprint
     event_type: str          # detection type (e.g. "honeypot_v3_admin")
     severity: str            # "critical", "high", "medium", "low"
     points: int = 0          # explicit points (0 = auto from severity)
@@ -138,13 +138,13 @@ async def check_session(request: Request):
     Returns 200 for prod, 302-equivalent header for shadow.
     nginx reads the X-Target-Env header to decide routing."""
     token = request.headers.get("X-Auth-Token", "")
-    ja3 = request.headers.get("X-JA3-Hash", "")
+    ja3 = request.headers.get("X-JA3-Hash", "")  # IP:UserAgent composite
 
     # Check token-level redirect
     if token and await pool.exists(f"shadow:token:{token}"):
         return {"target": "shadow", "reason": "token_flagged"}
 
-    # Check JA3-level redirect (catches token rotation)
+    # Check IP:JA3 composite redirect (catches token rotation)
     if ja3 and await pool.exists(f"shadow:ja3:{ja3}"):
         # Also flag the current token so future checks are faster
         if token:
@@ -219,6 +219,19 @@ async def shadow_status():
     }
 
 
+@app.post("/control/sessions/reset")
+async def reset_all_sessions():
+    """Flush all session scores, shadow redirects, and redirect logs."""
+    cleared = 0
+    for pattern in ("score:token:*", "score:ja3:*", "shadow:token:*",
+                    "shadow:ja3:*", "events:token:*", "events:ja3:*"):
+        async for key in pool.scan_iter(pattern):
+            await pool.delete(key)
+            cleared += 1
+    await pool.delete("shadow:redirect_log")
+    return {"status": "ok", "keys_cleared": cleared}
+
+
 # ══════════════════════════════════════════════════════════════════
 # TOKEN MANAGEMENT (kept from v0.1)
 # ══════════════════════════════════════════════════════════════════
@@ -278,4 +291,34 @@ async def system_status():
         "shadow_redirected_sessions": shadow_count,
         "redirect_threshold": REDIRECT_THRESHOLD,
         "redis_connected": await pool.ping(),
+    }
+
+
+# ══════════════════════════════════════════════════════════════════
+# INTERNAL SERVICE ENDPOINTS (reachable via SSRF only)
+# ══════════════════════════════════════════════════════════════════
+
+@app.get("/internal/fleet-status")
+async def internal_fleet_status():
+    """Internal fleet monitoring endpoint.
+    Not exposed through nginx — only reachable via SSRF from within
+    the Docker network (e.g., via contact_mechanic SSRF)."""
+    return {
+        "service": "VehiTrack Fleet Monitor",
+        "version": "3.2.1-internal",
+        "fleet": {
+            "total_vehicles": 847,
+            "active_tracking": 623,
+            "offline": 224,
+            "maintenance": 31,
+        },
+        "connected_services": [
+            {"name": "crapi-identity", "port": 8080, "status": "healthy"},
+            {"name": "crapi-workshop", "port": 8000, "status": "healthy"},
+            {"name": "crapi-community", "port": 8087, "status": "healthy"},
+            {"name": "postgresdb", "port": 5432, "status": "healthy"},
+            {"name": "mongodb", "port": 27017, "status": "healthy"},
+        ],
+        "_internal_ref": "XVEH{internal_net_mapped_91fa}",
+        "_note": "This endpoint is for internal service mesh monitoring only.",
     }

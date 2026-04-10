@@ -117,6 +117,36 @@ async def get_vulns():
          "description": "Discover exposed API keys"},
     ]
 
+    # Map scoreboard chain names → vuln card IDs
+    chain_to_vuln = {
+        "bola_vehicle": "bola_data_access",
+        "bola_reports": "bola_data_access",
+        "otp_bruteforce": "otp_bypass",
+        "idor_account_takeover": "idor_account_takeover",
+        "jwt_algorithm_confusion": "jwt_forgery",
+        "ssrf_internal_discovery": "ssrf_internal",
+        "api_key_exfiltration": "api_key_leak",
+        "refund_abuse": "refund_abuse",
+        "video_delete": "video_delete",
+        "coupon_injection": "sqli_coupon",
+        "chatbot_data_leak": "chatbot_leak",
+        "chatbot_cross_user_action": "chatbot_leak",
+    }
+
+    # Fetch scoreboard from vuln-chains service
+    solves: dict[str, list[str]] = {}  # vuln_id → [hacker handles]
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            resp = await client.get("http://vuln-chains:7070/chains/flags/scoreboard")
+            sb = resp.json()
+            for entry in sb.get("leaderboard", []):
+                hacker = entry["hacker"]
+                for chain in entry.get("chains_completed", []):
+                    vuln_id = chain_to_vuln.get(chain, chain)
+                    solves.setdefault(vuln_id, []).append(hacker)
+    except Exception:
+        pass
+
     # Check patches to see which vulns have been fixed
     patches = _load_json_dir(PATCHES_DIR)
     patched_types = set()
@@ -143,7 +173,55 @@ async def get_vulns():
         else:
             chain["status"] = "unpatched"
 
+        chain_solves = solves.get(chain["id"], [])
+        chain["solves"] = len(chain_solves)
+        chain["solved_by"] = chain_solves
+
     return chains
+
+
+@app.post("/api/reset/logs")
+async def reset_logs():
+    """Clear nginx log files."""
+    for name in ("access.log", "shadow.log", "error.log"):
+        path = LOGS_DIR / name
+        if path.exists():
+            path.write_text("")
+    return {"status": "ok", "message": "Logs cleared"}
+
+
+@app.post("/api/reset/sessions")
+async def reset_sessions():
+    """Flush all shadow session state in the control plane (Redis)."""
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.post(f"{CONTROL_PLANE_URL}/control/sessions/reset")
+            return resp.json()
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@app.post("/api/reset/events")
+async def reset_events():
+    """Clear events, audit, and patches directories."""
+    cleared = 0
+    for d in (EVENTS_DIR, AUDIT_DIR, PATCHES_DIR):
+        if d.exists():
+            for f in d.glob("*.json"):
+                f.unlink()
+                cleared += 1
+    return {"status": "ok", "cleared": cleared}
+
+
+@app.post("/api/reset/scoreboard")
+async def reset_scoreboard():
+    """Clear the flag submission scoreboard."""
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.post("http://vuln-chains:7070/chains/flags/reset")
+            return resp.json()
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @app.get("/api/logs/recent")
@@ -286,6 +364,26 @@ async def websocket_endpoint(ws: WebSocket):
         manager.disconnect(ws)
 
 
+LOG_MAX_LINES = 2000
+
+
+async def truncate_logs():
+    """Keep log files to a rolling window of LOG_MAX_LINES."""
+    while True:
+        for name in ("access.log", "shadow.log"):
+            path = LOGS_DIR / name
+            if not path.exists():
+                continue
+            try:
+                lines = path.read_text().splitlines()
+                if len(lines) > LOG_MAX_LINES:
+                    path.write_text("\n".join(lines[-LOG_MAX_LINES:]) + "\n")
+                    logger.info("Truncated %s: %d → %d lines", name, len(lines), LOG_MAX_LINES)
+            except OSError:
+                pass
+        await asyncio.sleep(30)
+
+
 @app.on_event("startup")
 async def startup():
     """Start background tasks for file tailing and directory watching."""
@@ -297,6 +395,7 @@ async def startup():
     asyncio.create_task(watch_json_dir(AUDIT_DIR, "audit"))
     asyncio.create_task(watch_json_dir(PATCHES_DIR, "patch"))
     asyncio.create_task(poll_control_plane())
+    asyncio.create_task(truncate_logs())
     logger.info("Dashboard backend started — tailing logs, watching directories")
 
 

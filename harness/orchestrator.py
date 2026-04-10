@@ -385,8 +385,6 @@ class Orchestrator:
         No blocking — we WANT the attacker to continue so we can observe."""
         # Extract session identifiers from the event
         token = event.evidence.get("auth_header_preview", "")
-        # Use User-Agent as JA3 substitute (nginx passes this to control plane)
-        # The actual auth token is in the log line
         log_line = event.evidence.get("log_line", "")
 
         # Try to extract the full auth token from the log line
@@ -395,13 +393,20 @@ class Orchestrator:
         if auth_match:
             token = auth_match.group(1)
 
+        # Build IP:UserAgent composite fingerprint (matches nginx Lua logic)
+        source_ip = event.evidence.get("source_ip", "")
+        # Extract User-Agent from log line (watcher doesn't always put it in evidence)
+        ua_match = re.search(r'" "([^"]*)" rt=', log_line)
+        user_agent = ua_match.group(1) if ua_match else ""
+        fingerprint = f"{source_ip}:{user_agent}" if source_ip else ""
+
         # Score the session
         try:
             result = await self.control_plane.score_session(
                 event_type=event.event_type,
                 severity=event.severity.value,
                 token=token,
-                ja3="",  # JA3 extracted at nginx level, not here
+                ja3=fingerprint,
             )
             if result.get("redirected"):
                 self._audit("session_redirected_to_shadow", event.event_id,

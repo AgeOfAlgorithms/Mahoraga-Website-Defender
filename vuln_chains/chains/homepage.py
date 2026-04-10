@@ -198,7 +198,7 @@ HOMEPAGE_HTML = """\
     </div>
 
     <div class="footer">
-        VehiTrack Security Challenge &mdash; Powered by Reactive Defender
+        VehiTrack Security Challenge &mdash; Powered by Mahoraga Defender Agent
     </div>
 </div>
 </body>
@@ -207,5 +207,6 @@ HOMEPAGE_HTML = """\
 
 
 @router.get("/chains/challenge", response_class=HTMLResponse)
+@router.get("/challenge", response_class=HTMLResponse)
 async def homepage():
     return HOMEPAGE_HTML

@@ -12,7 +12,7 @@ const TABS = [
   { id: "vulns", label: "Vulnerabilities" },
 ];
 
-const MAX_LOGS = 500;
+const MAX_LOGS = 800;
 
 export default function App() {
   const [tab, setTab] = useState("logs");
@@ -33,6 +33,12 @@ export default function App() {
     fetch("/api/patches").then(r => r.json()).then(setPatches).catch(() => {});
     fetch("/api/status").then(r => r.json()).then(setStatus).catch(() => {});
     fetch("/api/vulns").then(r => r.json()).then(setVulns).catch(() => {});
+
+    // Poll vulns/scoreboard every 10s (flag submissions don't come via WebSocket)
+    const vulnInterval = setInterval(() => {
+      fetch("/api/vulns").then(r => r.json()).then(setVulns).catch(() => {});
+    }, 10000);
+    return () => clearInterval(vulnInterval);
   }, []);
 
   // Handle WebSocket messages
@@ -85,9 +91,31 @@ export default function App() {
     audit.filter(a => a.action === "shadow_exploit_detected").map(a => a.detail)
   );
 
-  const shadowSessions = status?.shadow?.redirected_tokens ?? 0;
+  const shadowSessions = (status?.shadow?.redirected_tokens ?? 0) + (status?.shadow?.redirected_ja3s ?? 0);
   const totalEvents = events.length;
   const totalPatches = patches.length;
+  const [resetOpen, setResetOpen] = useState(false);
+
+  const doReset = async (endpoint, label) => {
+    if (!confirm(`Reset ${label}? This cannot be undone.`)) return;
+    try {
+      await fetch(endpoint, { method: "POST" });
+      // Refresh state
+      if (endpoint.includes("logs")) {
+        setProdLogs([]);
+        setShadowLogs([]);
+      }
+      if (endpoint.includes("sessions")) {
+        fetch("/api/status").then(r => r.json()).then(setStatus).catch(() => {});
+      }
+      if (endpoint.includes("events")) {
+        setEvents([]);
+        setAudit([]);
+        setPatches([]);
+      }
+    } catch {}
+    setResetOpen(false);
+  };
 
   return (
     <div className="h-full flex flex-col text-gray-200">
@@ -101,6 +129,50 @@ export default function App() {
           <Stat label="Shadow Sessions" value={shadowSessions} color="purple" />
           <Stat label="Patches" value={totalPatches} color="green" />
           <StatusDot connected={!!status?.control_plane?.redis_connected} />
+
+          {/* Reset dropdown */}
+          <div className="relative">
+            <button
+              onClick={() => setResetOpen(!resetOpen)}
+              className="px-2 py-1 text-xs text-gray-400 hover:text-white bg-gray-800 hover:bg-gray-700 rounded border border-gray-700 transition-colors"
+            >
+              Reset
+            </button>
+            {resetOpen && (
+              <div className="absolute right-0 top-8 bg-gray-800 border border-gray-700 rounded shadow-xl z-50 w-48">
+                <button onClick={() => doReset("/api/reset/logs", "logs")}
+                  className="w-full text-left px-3 py-2 text-xs text-gray-300 hover:bg-gray-700 hover:text-white">
+                  Clear Logs
+                </button>
+                <button onClick={() => doReset("/api/reset/sessions", "shadow sessions")}
+                  className="w-full text-left px-3 py-2 text-xs text-gray-300 hover:bg-gray-700 hover:text-white">
+                  Clear Shadow Sessions
+                </button>
+                <button onClick={() => doReset("/api/reset/events", "events & patches")}
+                  className="w-full text-left px-3 py-2 text-xs text-gray-300 hover:bg-gray-700 hover:text-white">
+                  Clear Events & Patches
+                </button>
+                <button onClick={() => { doReset("/api/reset/scoreboard", "scoreboard"); fetch("/api/vulns").then(r => r.json()).then(setVulns).catch(() => {}); }}
+                  className="w-full text-left px-3 py-2 text-xs text-gray-300 hover:bg-gray-700 hover:text-white">
+                  Clear Scoreboard
+                </button>
+                <div className="border-t border-gray-700" />
+                <button onClick={async () => {
+                    if (!confirm("Reset ALL state? This clears logs, sessions, events, patches, and scoreboard.")) return;
+                    await fetch("/api/reset/logs", { method: "POST" });
+                    await fetch("/api/reset/sessions", { method: "POST" });
+                    await fetch("/api/reset/events", { method: "POST" });
+                    await fetch("/api/reset/scoreboard", { method: "POST" });
+                    setProdLogs([]); setShadowLogs([]); setEvents([]); setAudit([]); setPatches([]);
+                    fetch("/api/status").then(r => r.json()).then(setStatus).catch(() => {});
+                    setResetOpen(false);
+                  }}
+                  className="w-full text-left px-3 py-2 text-xs text-red-400 hover:bg-red-900/30 hover:text-red-300 font-medium">
+                  Reset Everything
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </header>
 

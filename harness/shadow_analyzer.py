@@ -80,6 +80,9 @@ HAIKU_COST_PER_CALL = 0.003  # Haiku is cheap
 class ShadowAnalyzer:
     """Periodically analyzes shadow logs with LLM to detect successful exploits."""
 
+    IDLE_TIMEOUT = 120.0  # seconds of no shadow activity before sleeping
+    IDLE_POLL = 5.0       # how often to check for new lines while idle
+
     def __init__(
         self,
         shadow_log_path: Path,
@@ -92,54 +95,112 @@ class ShadowAnalyzer:
         self.interval = interval
         self.on_exploit_detected = on_exploit_detected  # callback
         self._last_position = 0
+        self._last_activity = 0.0  # timestamp of last shadow log entry seen
         self._running = False
+        self._active = False       # currently analyzing (not idle)
+
+    @property
+    def active(self) -> bool:
+        return self._active
 
     async def run(self) -> None:
-        """Main loop — analyze shadow logs every interval seconds."""
+        """Main loop — analyze shadow logs every interval seconds.
+        Goes idle if no shadow activity for IDLE_TIMEOUT seconds."""
         self._running = True
         logger.info(
-            "Shadow Analyzer started (interval=%ds, log=%s)",
-            self.interval, self.shadow_log_path,
+            "Shadow Analyzer started (interval=%ds, idle_timeout=%ds, log=%s)",
+            self.interval, self.IDLE_TIMEOUT, self.shadow_log_path,
         )
 
         while self._running:
             try:
-                await self._analyze_cycle()
+                had_data = await self._analyze_cycle()
+                if had_data:
+                    self._last_activity = time.time()
+                    if not self._active:
+                        self._active = True
+                        logger.info("Shadow Analyzer ACTIVE — shadow traffic detected")
+                elif self._active and time.time() - self._last_activity > self.IDLE_TIMEOUT:
+                    self._active = False
+                    logger.info("Shadow Analyzer IDLE — no shadow traffic for %.0fs",
+                                self.IDLE_TIMEOUT)
             except Exception as e:
                 logger.error("Shadow analysis cycle failed: %s", e)
-            await asyncio.sleep(self.interval)
 
-    async def _analyze_cycle(self) -> None:
-        """Read new shadow log entries and analyze with LLM."""
+            if self._active:
+                await asyncio.sleep(self.interval)
+            else:
+                # Idle: just check for new lines without calling LLM
+                await self._wait_for_activity()
+
+    async def _wait_for_activity(self) -> None:
+        """Poll for new shadow log lines without calling LLM.
+        Returns as soon as new lines appear."""
+        while self._running:
+            if self.shadow_log_path.exists():
+                try:
+                    size = self.shadow_log_path.stat().st_size
+                    if size > self._last_position:
+                        return  # new data — caller will run _analyze_cycle
+                except OSError:
+                    pass
+            await asyncio.sleep(self.IDLE_POLL)
+
+    async def _analyze_cycle(self) -> bool:
+        """Read new shadow log entries and analyze with LLM.
+        Returns True if new entries were found."""
         if not self.shadow_log_path.exists():
-            return
+            return False
 
-        # Read new lines
+        # Read new lines plus 20 older lines for context
         with open(self.shadow_log_path, "r") as f:
+            # Read context lines before _last_position
+            context_lines = []
+            if self._last_position > 0:
+                f.seek(0)
+                all_prior = f.read(self._last_position).splitlines()
+                context_lines = all_prior[-20:] if len(all_prior) >= 20 else all_prior
+
+            # Read new lines from where we left off
             f.seek(self._last_position)
             new_lines = f.readlines()
             self._last_position = f.tell()
 
         if not new_lines:
-            return  # nothing new, skip LLM call
+            return False  # nothing new, skip LLM call
 
-        # Filter to only shadow entries (should already be, but safety check)
-        entries = [line.strip() for line in new_lines if line.strip()]
-        if not entries:
-            return
+        new_entries = [line.strip() for line in new_lines if line.strip()]
+        if not new_entries:
+            return False
 
-        logger.info("Analyzing %d shadow log entries", len(entries))
+        # Prepend context lines (marked so LLM knows they're older)
+        context_entries = [line.strip() for line in context_lines if line.strip()]
+        n_context = len(context_entries)
+        n_new = len(new_entries)
+
+        logger.info("Analyzing %d new + %d context shadow log entries", n_new, n_context)
 
         # Budget check
         if not self.cost_governor.can_spend("shadow_analysis", HAIKU_COST_PER_CALL):
             logger.warning("Budget exceeded, skipping shadow analysis")
-            return
+            return True  # had data, just can't afford to analyze
 
-        # Truncate if too many entries (keep last 50)
-        if len(entries) > 50:
-            entries = entries[-50:]
+        # Truncate new entries if too many (keep last 100)
+        if len(new_entries) > 100:
+            new_entries = new_entries[-100:]
 
-        log_text = "\n".join(entries)
+        entries = context_entries + new_entries
+
+        # Mark context vs new so the LLM focuses on new but has context
+        if context_entries:
+            log_text = (
+                "--- CONTEXT (previous requests, for reference only) ---\n"
+                + "\n".join(context_entries)
+                + "\n\n--- NEW REQUESTS (analyze these) ---\n"
+                + "\n".join(new_entries)
+            )
+        else:
+            log_text = "\n".join(new_entries)
         prompt = ANALYSIS_PROMPT.format(log_entries=log_text)
 
         options = ClaudeAgentOptions(
@@ -160,7 +221,7 @@ class ShadowAnalyzer:
                             response_text += block.text
         except Exception as e:
             logger.error("Shadow analysis LLM call failed: %s", e)
-            return
+            return True  # had data, LLM call just failed
 
         self.cost_governor.record_spend("shadow_analysis", HAIKU_COST_PER_CALL)
 
@@ -172,7 +233,7 @@ class ShadowAnalyzer:
             result = json.loads(text)
         except json.JSONDecodeError:
             logger.error("Failed to parse shadow analysis: %s", response_text[:200])
-            return
+            return True
 
         attacks = result.get("attacks_detected", [])
         if not attacks:
@@ -180,7 +241,7 @@ class ShadowAnalyzer:
                 "Shadow analysis: no successful attacks in %d entries",
                 result.get("total_requests_analyzed", len(entries)),
             )
-            return
+            return True
 
         # Exploits detected!
         for attack in attacks:
@@ -192,6 +253,8 @@ class ShadowAnalyzer:
 
             if self.on_exploit_detected:
                 await self.on_exploit_detected(attack)
+
+        return True
 
     def stop(self):
         self._running = False

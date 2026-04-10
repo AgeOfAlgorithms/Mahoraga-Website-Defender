@@ -97,7 +97,23 @@ export default function VulnStatus({ vulns, patches, events }) {
                       </span>
                     </div>
                     <p className="text-xs text-gray-400 mt-1">{v.description}</p>
-                    <div className="flex items-center justify-between mt-3">
+
+                    {/* Solves */}
+                    {v.solves > 0 && (
+                      <div className="mt-2 p-1.5 rounded bg-red-950/40 border border-red-800/50">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] font-bold text-red-400">
+                            {v.solves} solve{v.solves !== 1 ? "s" : ""}
+                          </span>
+                          <span className="text-[10px] text-gray-500">by</span>
+                          <span className="text-[10px] text-red-300 truncate">
+                            {v.solved_by?.join(", ")}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="flex items-center justify-between mt-2">
                       <span className="text-[10px] font-mono text-gray-600">{v.id}</span>
                       {detectCount > 0 && (
                         <span className="text-[10px] text-amber-400">

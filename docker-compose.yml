@@ -278,8 +278,8 @@ services:
   mailhog:
     image: mailhog/mailhog
     container_name: mailhog
-    ports:
-      - "8025:8025"
+    # No ports exposed — internal only. Attackers must brute-force OTPs,
+    # not read them from MailHog.
     networks:
       - defender-net
 
@@ -331,7 +331,7 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - ./logs:/data/logs:ro
+      - ./logs:/data/logs
       - ./events:/data/events:ro
       - ./audit:/data/audit:ro
       - ./patches:/data/patches:ro
