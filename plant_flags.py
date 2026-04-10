@@ -221,8 +221,8 @@ def plant_idor_report_flag():
         return False
     mechanic_id = int(mechanic_id.strip())
 
-    # Insert at a high ID (500+) so it requires real enumeration
-    target_id = 500
+    # Insert at a moderate ID — requires enumeration but not excessive
+    target_id = 45
     docker_exec_psql(f"""
         INSERT INTO service_request (id, problem_details, created_on, updated_on,
                                      status, mechanic_id, vehicle_id)

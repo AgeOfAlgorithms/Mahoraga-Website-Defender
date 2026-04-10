@@ -144,7 +144,7 @@ HOMEPAGE_HTML = """\
     <div class="card">
         <h3>2. Account Takeover <span class="score">2 flags</span></h3>
         <p>Take over another user's account. There's more than one way in.
-        Prove it by logging in as the victim.</p>
+        The OTP system uses short numeric codes. Prove it by accessing the victim's data.</p>
     </div>
 
     <div class="card">

@@ -1,13 +1,13 @@
 """Orchestrator — the main loop that routes events through the agent pipeline.
 
 Option D flow:
-  PROD:   Watcher detects → score session → redirect to shadow
-  SHADOW: Watcher monitors → chain detector identifies COMPLETED exploit
-          → Analyzer triages → Fixer patches (scoped to that exploit only)
-          → Reviewer checks → Tester validates → deploy to both envs
+  PROD:   Watcher detects suspicious activity → score session → redirect to shadow
+  SHADOW: Shadow Analyzer (LLM) reads logs + response bodies → detects successful exploits
+          → Fixer patches (scoped to that exploit only) → Reviewer checks
+          → Tester validates → deploy to prod
 
-The Fixer only triggers when the ChainDetector confirms an exploit chain
-was completed in the shadow environment — NOT on every detection event.
+Generic detection — no hardcoded exploit patterns. The LLM reasons about
+whether request+response pairs indicate a successful attack.
 """
 
 from __future__ import annotations
@@ -25,7 +25,6 @@ from harness.agents.fixer import Fixer
 from harness.agents.reviewer import Reviewer
 from harness.agents.tester import Tester
 from harness.agents.watcher import Watcher
-from harness.chain_detector import ChainDetector
 from harness.control_plane_client import ControlPlaneClient
 from harness.cost_governor import CostGovernor
 from harness.shadow_analyzer import ShadowAnalyzer
@@ -90,9 +89,6 @@ class Orchestrator:
         )
         self.reviewer = Reviewer(self.cost_governor, str(project_dir))
         self.tester = Tester(self.cost_governor, app_url, str(project_dir))
-
-        # Chain completion detector — triggers Fixer on known patterns (free)
-        self.chain_detector = ChainDetector()
 
         # Queue for exploits detected by shadow analyzer
         self._exploit_queue: asyncio.Queue[dict] = asyncio.Queue()
@@ -182,105 +178,22 @@ class Orchestrator:
                 self._audit("error", event.event_id, "orchestrator", str(e))
 
     async def _handle_event(self, event: SecurityEvent) -> None:
-        """Two-phase event handling:
+        """Event handling: score session → redirect to shadow if threshold met.
 
-        Phase 1 (every event): Score session → redirect to shadow if threshold met
-        Phase 2 (chain completion only): Analyzer → Fixer → Reviewer → Tester → Deploy
-
-        The Fixer only runs when the ChainDetector confirms a full exploit
-        chain was completed — not on every suspicious event.
+        The Fixer pipeline is triggered separately by the Shadow Analyzer
+        when it observes successful exploits in the shadow environment.
         """
         logger.info("Processing event %s: %s [%s]",
                      event.event_id, event.event_type, event.severity.value)
 
-        # ── Phase 1: Score and redirect ───────────────────────────
+        # Score and redirect
         try:
             await self._take_immediate_action(event)
         except Exception as e:
             logger.error("Scoring failed for %s: %s", event.event_id, e)
 
-        # ── Phase 2: Check for chain completion ───────────────────
-        # Use the source IP as session ID (will be replaced by token+JA3 later)
-        session_id = event.evidence.get("source_ip", event.event_id)
-
-        completed_chains = self.chain_detector.add_event(
-            session_id=session_id,
-            event_type=event.event_type,
-            severity=event.severity.value,
-            evidence=event.evidence,
-        )
-
-        if not completed_chains:
-            # No chain completed — just log and move on
-            self._audit("event_recorded", event.event_id, "orchestrator",
-                         f"{event.event_type} [{event.severity.value}] — "
-                         f"no chain completion yet")
-            return
-
-        # ── Chain completed! Trigger the fix pipeline ─────────────
-        for chain in completed_chains:
-            logger.warning(
-                "EXPLOIT CHAIN COMPLETE: %s — %s (session %s)",
-                chain.name, chain.description, session_id[:20],
-            )
-            self._audit("chain_complete", event.event_id, "chain_detector",
-                         f"{chain.name}: {chain.description} "
-                         f"[severity={chain.severity}]")
-
-            # Create a triage result from the chain detection
-            # (bypasses the LLM Analyzer for cost savings — we already
-            # know what happened from the chain pattern)
-            from harness.types import TriageResult
-            triage = TriageResult(
-                event_id=event.event_id,
-                is_threat=True,
-                classification=chain.name,
-                confidence=0.95,
-                severity=Severity(chain.severity),
-                recommended_action=chain.fix_hint,
-                analysis=f"Chain completed: {chain.description}",
-                approval_policy=ApprovalPolicy.AUTO_APPLY_NOTIFY,
-            )
-
-            # Generate fix (scoped to this specific exploit)
-            event.status = EventStatus.FIX_PROPOSED
-            patch = await self.fixer.generate_patch(triage)
-            if patch is None:
-                self._audit("error", event.event_id, "fixer",
-                             f"Patch generation failed for {chain.name}")
-                continue
-
-            self._audit("patch_proposed", event.event_id, "fixer",
-                         f"chain={chain.name} files={patch.files_modified}")
-
-            # Review fix (Reviewer checks scope)
-            event.status = EventStatus.FIX_REVIEWING
-            review = await self.reviewer.review(triage, patch)
-            if review is None or not review.approved:
-                issues = review.issues if review else ["review failed"]
-                self._audit("escalated", event.event_id, "reviewer",
-                             f"Patch for {chain.name} rejected: {issues}")
-                logger.warning("Patch for %s rejected: %s", chain.name, issues)
-                continue
-
-            # Test fix
-            event.status = EventStatus.FIX_TESTING
-            test_result = await self.tester.test_patch(patch)
-            if test_result and not test_result.passed and not test_result.is_minor:
-                self._audit("escalated", event.event_id, "tester",
-                             f"Regression for {chain.name}: {test_result.complaint}")
-                continue
-
-            # Deploy
-            self._deploy(patch)
-            event.status = EventStatus.RESOLVED
-            self._audit("deployed", event.event_id, "orchestrator",
-                         f"Fixed {chain.name}: {patch.description}")
-            logger.info(
-                "RESOLVED: chain=%s patch=%s — %s",
-                chain.name, patch.patch_id, patch.description,
-            )
-            # TODO: send notification (Slack webhook, email, etc.)
+        self._audit("event_recorded", event.event_id, "orchestrator",
+                     f"{event.event_type} [{event.severity.value}]")
 
     async def _enqueue_exploit(self, attack: dict) -> None:
         """Called by ShadowAnalyzer — just drops the exploit into the queue.

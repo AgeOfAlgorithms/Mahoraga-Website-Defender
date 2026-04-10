@@ -68,16 +68,16 @@ def main():
         """)
     print("  BOLA report fake flag: OK")
 
-    # IDOR fake flag — in mechanic report #500 (same ID as prod)
+    # IDOR fake flag — in mechanic report #45 (same ID as prod)
     existing = docker_exec_psql(
-        "SELECT COUNT(*) FROM service_request WHERE id=500"
+        "SELECT COUNT(*) FROM service_request WHERE id=45"
     ).strip()
     if int(existing) == 0:
         docker_exec_psql(f"""
             INSERT INTO service_request (id, problem_details, created_on, updated_on,
                                          status, mechanic_id, vehicle_id)
             VALUES (
-                500,
+                45,
                 'Admin audit ref: XVEH{{shadow_idor_NOT_REAL_d4f1}} — internal.',
                 NOW(), NOW(), 'sent', {mechanic_id}, {vehicle_id}
             )

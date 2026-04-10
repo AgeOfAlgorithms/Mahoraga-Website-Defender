@@ -209,12 +209,6 @@ services:
       - defender-net
       - mail-net
 
-  api.mypremiumdealership.com:
-    build: ./crapi-fork/services/gateway-service
-    container_name: api.mypremiumdealership.com
-    networks:
-      - defender-net
-
   # ── Databases ───────────────────────────────────────────────────
   postgresdb:
     image: postgres:14
