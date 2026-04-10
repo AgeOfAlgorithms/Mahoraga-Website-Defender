@@ -1,0 +1,27 @@
+# Secrets
+.test-keys
+harness/.env
+
+# Runtime artifacts
+logs/nginx/access.log
+logs/nginx/error.log
+logs/nginx/shadow.log
+events/*.json
+audit/*.json
+patches/*.json
+reactive_defender.log
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+
+# crAPI fork (separate repo)
+crapi-fork/
+
+# Docker
+*.tar
+
+# IDE
+.vscode/
+.idea/

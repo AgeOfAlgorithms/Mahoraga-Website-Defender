@@ -1,0 +1,69 @@
+12:48:33 [INFO    ] Loaded 24 rules from crapi.yaml
+12:48:33 [INFO    ] Watcher test started. Scanning for 60s...
+12:48:33 [INFO    ]   nginx log: /home/sean/reactive_defender/logs/nginx/access.log
+12:48:33 [INFO    ]   extra logs: /home/sean/reactive_defender/logs
+12:48:33 [INFO    ]   events dir: /home/sean/reactive_defender/events
+12:48:35 [INFO    ] Detected honeypot_v3_admin from 172.19.0.1 [critical]
+12:48:35 [INFO    ] !!! [CRITICAL] honeypot_v3_admin | ip=172.19.0.1 path=-
+12:48:36 [INFO    ] Detected honeypot_v3_admin from 172.19.0.1 [critical]
+12:48:36 [INFO    ] Detected honeypot_debug_tokens from 172.19.0.1 [critical]
+12:48:36 [INFO    ] Detected recon_endpoint_scan from 172.19.0.1 [medium]
+12:48:36 [INFO    ] Detected honeypot_internal_health from 172.19.0.1 [high]
+12:48:36 [INFO    ] Detected honeypot_user_login from 172.19.0.1 [critical]
+12:48:36 [INFO    ] Detected honeypot_workshop_internal from 172.19.0.1 [critical]
+12:48:36 [INFO    ] Detected global_rate_limit_exceeded from 172.19.0.1 [medium]
+12:48:36 [INFO    ] Detected honeypot_community_admin from 172.19.0.1 [critical]
+12:48:36 [INFO    ] Detected honeypot_community_export from 172.19.0.1 [critical]
+12:48:36 [INFO    ] Detected honeypot_community_debug from 172.19.0.1 [critical]
+12:48:36 [INFO    ] Detected honeypot_trigger from 172.19.0.1 [high]
+12:48:36 [INFO    ] Detected honeypot_dotenv from 172.19.0.1 [high]
+12:48:36 [INFO    ] Detected honeypot_dotgit from 172.19.0.1 [high]
+12:48:36 [INFO    ] Detected honeypot_token_usage from 172.19.0.1 [critical]
+12:48:36 [INFO    ] Detected honeypot_coupon_usage from 172.19.0.1 [critical]
+12:48:36 [INFO    ] Detected not_found_probing from 172.19.0.1 [high]
+12:48:36 [INFO    ] !!! [CRITICAL] honeypot_v3_admin | ip=172.19.0.1 path=-
+12:48:36 [INFO    ] !!! [CRITICAL] honeypot_debug_tokens | ip=172.19.0.1 path=-
+12:48:36 [INFO    ] !   [MEDIUM] recon_endpoint_scan | ip=172.19.0.1 path=-
+12:48:36 [INFO    ] !!  [HIGH] honeypot_internal_health | ip=172.19.0.1 path=-
+12:48:36 [INFO    ] !!! [CRITICAL] honeypot_user_login | ip=172.19.0.1 path=-
+12:48:36 [INFO    ] !!! [CRITICAL] honeypot_workshop_internal | ip=172.19.0.1 path=-
+12:48:36 [INFO    ] !   [MEDIUM] global_rate_limit_exceeded | ip=172.19.0.1 path=-
+12:48:36 [INFO    ] !!! [CRITICAL] honeypot_community_admin | ip=172.19.0.1 path=-
+12:48:36 [INFO    ] !!! [CRITICAL] honeypot_community_export | ip=172.19.0.1 path=-
+12:48:36 [INFO    ] !!! [CRITICAL] honeypot_community_debug | ip=172.19.0.1 path=-
+12:48:36 [INFO    ] !!  [HIGH] honeypot_trigger | ip=172.19.0.1 path=/.env
+12:48:36 [INFO    ] !!  [HIGH] honeypot_dotenv | ip=172.19.0.1 path=-
+12:48:36 [INFO    ] !!  [HIGH] honeypot_dotgit | ip=172.19.0.1 path=-
+12:48:36 [INFO    ] !!! [CRITICAL] honeypot_token_usage | ip=172.19.0.1 path=-
+12:48:36 [INFO    ] !!! [CRITICAL] honeypot_coupon_usage | ip=172.19.0.1 path=-
+12:48:36 [INFO    ] !!  [HIGH] not_found_probing | ip=172.19.0.1 path=-
+12:49:33 [INFO    ] 
+12:49:33 [INFO    ] ============================================================
+12:49:33 [INFO    ] DETECTION SUMMARY (17 events in 60s)
+12:49:33 [INFO    ] ============================================================
+12:49:33 [INFO    ] 
+12:49:33 [INFO    ]   CRITICAL (10):
+12:49:33 [INFO    ]       2 × honeypot_v3_admin
+12:49:33 [INFO    ]       1 × honeypot_debug_tokens
+12:49:33 [INFO    ]       1 × honeypot_user_login
+12:49:33 [INFO    ]       1 × honeypot_workshop_internal
+12:49:33 [INFO    ]       1 × honeypot_community_admin
+12:49:33 [INFO    ]       1 × honeypot_community_export
+12:49:33 [INFO    ]       1 × honeypot_community_debug
+12:49:33 [INFO    ]       1 × honeypot_token_usage
+12:49:33 [INFO    ]       1 × honeypot_coupon_usage
+12:49:33 [INFO    ] 
+12:49:33 [INFO    ]   HIGH (5):
+12:49:33 [INFO    ]       1 × honeypot_internal_health
+12:49:33 [INFO    ]       1 × honeypot_trigger
+12:49:33 [INFO    ]       1 × honeypot_dotenv
+12:49:33 [INFO    ]       1 × honeypot_dotgit
+12:49:33 [INFO    ]       1 × not_found_probing
+12:49:33 [INFO    ] 
+12:49:33 [INFO    ]   MEDIUM (2):
+12:49:33 [INFO    ]       1 × recon_endpoint_scan
+12:49:33 [INFO    ]       1 × global_rate_limit_exceeded
+12:49:33 [INFO    ] 
+12:49:33 [INFO    ]   Total unique event types: 16
+12:49:33 [INFO    ]   Total events: 17
+12:49:33 [INFO    ]   Results saved to /home/sean/reactive_defender/test_logs/watcher_detections.json

@@ -1,0 +1,130 @@
+# Detection rules for crAPI + vuln chains + honeypots
+# These supplement the built-in patterns in watcher.py
+
+rules:
+  # ── Generic attack patterns ─────────────────────────────────────
+  - name: crapi_api_enumeration
+    pattern: '/api/(v2|v3)/(Users|Vehicles|Merchants|Products).*\b(DELETE|PUT)\b'
+    severity: high
+    description: "Suspicious API method on crAPI REST endpoints"
+
+  - name: otp_in_url
+    pattern: 'otp=\d{3,6}'
+    severity: high
+    description: "OTP token visible in URL — possible brute-force attempt"
+
+  - name: jwt_none_algorithm
+    pattern: 'eyJ[A-Za-z0-9_-]*\.eyJ[A-Za-z0-9_-]*\.$'
+    severity: critical
+    description: "JWT with empty signature (alg:none attack)"
+
+  - name: internal_url_ssrf
+    pattern: '(localhost[:/]|127\.0\.0\.1[:/]|(?<!\.)0\.0\.0\.0[:/]|10\.\d+\.\d+\.\d+[:/]|172\.(1[6-9]|2[0-9]|3[01])\.\d+\.\d+[:/]|192\.168\.\d+\.\d+[:/])'
+    severity: high
+    description: "Internal/private IP in request — SSRF indicator"
+
+  - name: nosql_injection
+    pattern: '(\$where|\$regex|\$gt|\$lt|\$ne|\$in|\$nin|\$or|\$and)'
+    severity: high
+    description: "NoSQL injection operators in request"
+
+  - name: prototype_pollution
+    pattern: '(__proto__|constructor\[|prototype\[)'
+    severity: critical
+    description: "Prototype pollution attempt"
+
+  - name: vuln_chain_flag_access
+    pattern: 'XVEH\{'
+    severity: critical
+    description: "Vuln chain flag value appearing in traffic — chain was completed"
+
+  # ── Source-level honeypot endpoints (in crAPI fork) ─────────────
+  # Identity service honeypots
+  - name: honeypot_v3_admin
+    pattern: '/identity/api/v3/admin/'
+    severity: critical
+    description: "Access to honeypot admin endpoint (identity service)"
+
+  - name: honeypot_debug_tokens
+    pattern: '/identity/api/debug/tokens'
+    severity: critical
+    description: "Access to honeypot debug tokens endpoint"
+
+  - name: honeypot_internal_health
+    pattern: '/identity/api/internal/health'
+    severity: high
+    description: "Access to honeypot internal health endpoint"
+
+  # Workshop service honeypots
+  - name: honeypot_workshop_internal
+    pattern: '/workshop/api/internal/'
+    severity: critical
+    description: "Access to honeypot internal endpoint (workshop service)"
+
+  # Community service honeypots
+  - name: honeypot_community_admin
+    pattern: '/community/api/v2/admin/'
+    severity: critical
+    description: "Access to honeypot admin endpoint (community service)"
+
+  - name: honeypot_community_debug
+    pattern: '/community/api/v2/debug/'
+    severity: critical
+    description: "Access to honeypot debug endpoint (community service)"
+
+  - name: honeypot_community_export
+    pattern: '/community/api/v2/internal/export'
+    severity: critical
+    description: "Access to honeypot data export endpoint"
+
+  # Honeypot data usage (attacker tried to use fake tokens/keys from honeypots)
+  - name: honeypot_token_usage
+    pattern: 'HONEYPOT-(TOKEN|ADMIN|key)'
+    severity: critical
+    description: "Attacker used a honeypot-planted fake token or API key"
+
+  - name: honeypot_internal_ref_usage
+    pattern: 'ord-ref-HONEYPOT'
+    severity: critical
+    description: "Attacker used the decoy _internal_ref from order data"
+
+  - name: honeypot_coupon_usage
+    pattern: 'VTRK-INTERNAL-100'
+    severity: critical
+    description: "Attacker used the honeypot coupon code"
+
+  - name: honeypot_web_apikey_usage
+    pattern: 'vtrk-web-f84a2c01'
+    severity: critical
+    description: "Attacker used the decoy API key from HTML comments"
+
+  - name: honeypot_user_login
+    pattern: 'superadmin@vehitrack\.io'
+    severity: critical
+    description: "Login attempt with honeypot superadmin account"
+
+  - name: honeypot_vehicle_vin
+    pattern: 'HONEY00000000001'
+    severity: critical
+    description: "Access to honeypot vehicle VIN"
+
+  # ── Nginx-level honeypots (existing) ────────────────────────────
+  - name: honeypot_dotenv
+    pattern: '/\.env'
+    severity: high
+    description: "Access to .env file"
+
+  - name: honeypot_dotgit
+    pattern: '/\.git'
+    severity: high
+    description: "Access to .git directory"
+
+  - name: honeypot_wpadmin
+    pattern: '/wp-admin'
+    severity: high
+    description: "Access to WordPress admin (not a WordPress site)"
+
+  - name: honeypot_phpinfo
+    pattern: '/phpinfo'
+    severity: high
+    description: "Access to phpinfo (not a PHP site)"

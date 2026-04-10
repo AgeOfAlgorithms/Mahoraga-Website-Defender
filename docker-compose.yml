@@ -1,0 +1,533 @@
+services:
+  # ── crAPI PROD (built from fork) ────────────────────────────────
+  crapi-identity:
+    build: ./crapi-fork/services/identity
+    container_name: crapi-identity
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+    volumes:
+      - ./crapi-fork/services/identity/src:/app/src:ro
+    environment:
+      - LOG_LEVEL=INFO
+      - DB_NAME=crapi
+      - DB_USER=admin
+      - DB_PASSWORD=crapisecretpassword
+      - DB_HOST=postgresdb
+      - DB_PORT=5432
+      - SERVER_PORT=8080
+      - JWT_SECRET=crapi
+      - MAILHOG_HOST=mailhog
+      - MAILHOG_PORT=1025
+      - MAILHOG_DOMAIN=example.com
+      - SMTP_HOST=smtp.example.com
+      - SMTP_PORT=587
+      - SMTP_EMAIL=user@example.com
+      - SMTP_PASS=xxxxxxxxxxxxxx
+      - SMTP_FROM=no-reply@example.com
+      - SMTP_AUTH=true
+      - SMTP_STARTTLS=true
+      - JWT_EXPIRATION=604800000
+      - ENABLE_LOG4J=false
+      - ENABLE_SHELL_INJECTION=false
+      - API_GATEWAY_URL=https://api.mypremiumdealership.com
+      - TLS_ENABLED=false
+      - TLS_KEYSTORE_TYPE=PKCS12
+      - TLS_KEYSTORE=classpath:certs/server.p12
+      - TLS_KEYSTORE_PASSWORD=passw0rd
+      - TLS_KEY_PASSWORD=passw0rd
+      - TLS_KEY_ALIAS=identity
+    depends_on:
+      postgresdb:
+        condition: service_healthy
+      mailhog:
+        condition: service_started
+    healthcheck:
+      test: /app/health.sh
+      interval: 15s
+      timeout: 15s
+      retries: 15
+    networks:
+      - defender-net
+
+  crapi-community:
+    build: ./crapi-fork/services/community
+    container_name: crapi-community
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+    environment:
+      - LOG_LEVEL=INFO
+      - IDENTITY_SERVICE=crapi-identity:8080
+      - DB_NAME=crapi
+      - DB_USER=admin
+      - DB_PASSWORD=crapisecretpassword
+      - DB_HOST=postgresdb
+      - DB_PORT=5432
+      - SERVER_PORT=8087
+      - MONGO_DB_HOST=mongodb
+      - MONGO_DB_PORT=27017
+      - MONGO_DB_USER=admin
+      - MONGO_DB_PASSWORD=crapisecretpassword
+      - MONGO_DB_NAME=crapi
+      - TLS_ENABLED=false
+    depends_on:
+      postgresdb:
+        condition: service_healthy
+      mongodb:
+        condition: service_started
+      crapi-identity:
+        condition: service_healthy
+    healthcheck:
+      test: /app/health.sh
+      interval: 15s
+      timeout: 15s
+      retries: 15
+    networks:
+      - defender-net
+
+  crapi-workshop:
+    build: ./crapi-fork/services/workshop
+    container_name: crapi-workshop
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+    volumes:
+      - ./crapi-fork/services/workshop/crapi:/app/crapi
+    environment:
+      - LOG_LEVEL=INFO
+      - IDENTITY_SERVICE=crapi-identity:8080
+      - DB_NAME=crapi
+      - DB_USER=admin
+      - DB_PASSWORD=crapisecretpassword
+      - DB_HOST=postgresdb
+      - DB_PORT=5432
+      - SERVER_PORT=8000
+      - MONGO_DB_HOST=mongodb
+      - MONGO_DB_PORT=27017
+      - MONGO_DB_USER=admin
+      - MONGO_DB_PASSWORD=crapisecretpassword
+      - MONGO_DB_NAME=crapi
+      - SECRET_KEY=crapi
+      - API_GATEWAY_URL=https://api.mypremiumdealership.com
+      - TLS_ENABLED=false
+    depends_on:
+      postgresdb:
+        condition: service_healthy
+      mongodb:
+        condition: service_started
+      crapi-identity:
+        condition: service_healthy
+      crapi-community:
+        condition: service_healthy
+    healthcheck:
+      test: /app/health.sh
+      interval: 15s
+      timeout: 15s
+      retries: 15
+    networks:
+      - defender-net
+
+  crapi-chatbot:
+    build: ./crapi-fork/services/chatbot
+    container_name: crapi-chatbot
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+    environment:
+      - LOG_LEVEL=DEBUG
+      - TLS_ENABLED=false
+      - SERVER_PORT=5002
+      - WEB_SERVICE=crapi-web
+      - IDENTITY_SERVICE=crapi-identity:8080
+      - DB_NAME=crapi
+      - DB_USER=admin
+      - DB_PASSWORD=crapisecretpassword
+      - DB_HOST=postgresdb
+      - DB_PORT=5432
+      - MONGO_DB_HOST=mongodb
+      - MONGO_DB_PORT=27017
+      - MONGO_DB_USER=admin
+      - MONGO_DB_PASSWORD=crapisecretpassword
+      - MONGO_DB_NAME=crapi
+      - API_USER=admin@example.com
+      - API_PASSWORD=Admin!123
+      - OPENAPI_SPEC=/app/resources/crapi-openapi-spec.json
+      - CHATBOT_LIFE=1
+      - CHATBOT_LLM_PROVIDER=${CHATBOT_LLM_PROVIDER:-openai}
+      - CHATBOT_LLM_MODEL=${CHATBOT_LLM_MODEL:-}
+      - CHATBOT_EMBEDDINGS_MODEL=${CHATBOT_EMBEDDINGS_MODEL:-}
+      - CHATBOT_EMBEDDINGS_DIMENSIONS=${CHATBOT_EMBEDDINGS_DIMENSIONS:-1536}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - CHATBOT_OPENAI_API_KEY=${CHATBOT_OPENAI_API_KEY:-}
+      - CHATBOT_OPENAI_BASE_URL=${CHATBOT_OPENAI_BASE_URL:-}
+      - MAX_CONTENT_LENGTH=50000
+      - CHROMA_HOST=chromadb
+      - CHROMA_PORT=8000
+    depends_on:
+      mongodb:
+        condition: service_started
+      crapi-identity:
+        condition: service_healthy
+      chromadb:
+        condition: service_started
+    networks:
+      - defender-net
+
+  crapi-web:
+    build: ./crapi-fork/services/web
+    container_name: crapi-web
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+    environment:
+      - COMMUNITY_SERVICE=crapi-community:8087
+      - IDENTITY_SERVICE=crapi-identity:8080
+      - WORKSHOP_SERVICE=crapi-workshop:8000
+      - CHATBOT_SERVICE=crapi-chatbot:5002
+      - MAILHOG_WEB_SERVICE=mailhog:8025
+      - TLS_ENABLED=false
+    depends_on:
+      crapi-identity:
+        condition: service_healthy
+      crapi-community:
+        condition: service_healthy
+      crapi-workshop:
+        condition: service_healthy
+    networks:
+      - defender-net
+
+  api.mypremiumdealership.com:
+    build: ./crapi-fork/services/gateway-service
+    container_name: api.mypremiumdealership.com
+    networks:
+      - defender-net
+
+  # ── Databases ───────────────────────────────────────────────────
+  postgresdb:
+    image: postgres:14
+    container_name: postgresdb
+    command:
+      - postgres
+      - -c
+      - max_connections=500
+      - -c
+      - log_statement=all
+      - -c
+      - log_min_duration_statement=0
+      - -c
+      - "log_line_prefix=%t [%p] user=%u db=%d "
+      - -c
+      - log_destination=stderr
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: crapisecretpassword
+      POSTGRES_DB: crapi
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready"]
+      interval: 15s
+      timeout: 15s
+      retries: 15
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "3"
+    volumes:
+      - postgresql-data:/var/lib/postgresql/data
+    networks:
+      - defender-net
+
+  mongodb:
+    image: mongo:4.4
+    container_name: mongodb
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: crapisecretpassword
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongo mongodb:27017/test --quiet
+      interval: 15s
+      timeout: 15s
+      retries: 15
+      start_period: 20s
+    volumes:
+      - mongodb-data:/data/db
+    networks:
+      - defender-net
+
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: chromadb
+    environment:
+      IS_PERSISTENT: "TRUE"
+    volumes:
+      - chromadb-data:/data
+    networks:
+      - defender-net
+
+  mailhog:
+    image: mailhog/mailhog
+    container_name: mailhog
+    ports:
+      - "8025:8025"
+    networks:
+      - defender-net
+
+  # ── Defender infrastructure ─────────────────────────────────────
+  nginx:
+    image: openresty/openresty:alpine
+    container_name: nginx-proxy
+    ports:
+      - "8888:80"
+    volumes:
+      - ./nginx/nginx.conf:/usr/local/openresty/nginx/conf/nginx.conf:ro
+      - ./logs/nginx:/var/log/nginx
+    depends_on:
+      - crapi-web
+      - vuln-chains
+    networks:
+      - defender-net
+
+  control-plane:
+    build: ./control_plane
+    container_name: control-plane
+    ports:
+      - "9090:9090"
+    environment:
+      - JWT_SECRET=crapi
+      - REDIS_HOST=redis
+    depends_on:
+      - redis
+    volumes:
+      - ./control_plane:/app
+    networks:
+      - defender-net
+
+  vuln-chains:
+    build: ./vuln_chains
+    container_name: vuln-chains
+    ports:
+      - "7070:7070"
+    environment:
+      - IDENTITY_SERVICE=crapi-identity:8080
+    volumes:
+      - ./vuln_chains:/app
+    networks:
+      - defender-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: defender-redis
+    networks:
+      - defender-net
+
+  # ══════════════════════════════════════════════════════════════════
+  # SHADOW ENVIRONMENT — identical services, separate databases,
+  # fake data. Attacker sessions are transparently redirected here
+  # by nginx when their threat score exceeds the threshold.
+  # ══════════════════════════════════════════════════════════════════
+
+  shadow-postgresdb:
+    image: postgres:14
+    container_name: shadow-postgresdb
+    command:
+      - postgres
+      - -c
+      - max_connections=500
+      - -c
+      - log_statement=all
+      - -c
+      - "log_line_prefix=%t [%p] user=%u db=%d SHADOW "
+      - -c
+      - log_destination=stderr
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: crapisecretpassword
+      POSTGRES_DB: crapi
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready"]
+      interval: 15s
+      timeout: 15s
+      retries: 15
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+    volumes:
+      - shadow-postgresql-data:/var/lib/postgresql/data
+    networks:
+      - defender-net
+
+  shadow-mongodb:
+    image: mongo:4.4
+    container_name: shadow-mongodb
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: crapisecretpassword
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongo shadow-mongodb:27017/test --quiet
+      interval: 15s
+      timeout: 15s
+      retries: 15
+      start_period: 20s
+    volumes:
+      - shadow-mongodb-data:/data/db
+    networks:
+      - defender-net
+
+  shadow-identity:
+    image: reactive_defender-crapi-identity:latest
+    container_name: shadow-identity
+    environment:
+      - LOG_LEVEL=INFO
+      - DB_NAME=crapi
+      - DB_USER=admin
+      - DB_PASSWORD=crapisecretpassword
+      - DB_HOST=shadow-postgresdb
+      - DB_PORT=5432
+      - SERVER_PORT=8080
+      - JWT_SECRET=crapi
+      - MAILHOG_HOST=mailhog
+      - MAILHOG_PORT=1025
+      - MAILHOG_DOMAIN=example.com
+      - SMTP_HOST=smtp.example.com
+      - SMTP_PORT=587
+      - SMTP_EMAIL=user@example.com
+      - SMTP_PASS=xxxxxxxxxxxxxx
+      - SMTP_FROM=no-reply@example.com
+      - SMTP_AUTH=true
+      - SMTP_STARTTLS=true
+      - JWT_EXPIRATION=604800000
+      - ENABLE_LOG4J=false
+      - ENABLE_SHELL_INJECTION=false
+      - API_GATEWAY_URL=https://api.mypremiumdealership.com
+      - TLS_ENABLED=false
+      - TLS_KEYSTORE_TYPE=PKCS12
+      - TLS_KEYSTORE=classpath:certs/server.p12
+      - TLS_KEYSTORE_PASSWORD=passw0rd
+      - TLS_KEY_PASSWORD=passw0rd
+      - TLS_KEY_ALIAS=identity
+    depends_on:
+      shadow-postgresdb:
+        condition: service_healthy
+      mailhog:
+        condition: service_started
+    healthcheck:
+      test: /app/health.sh
+      interval: 15s
+      timeout: 15s
+      retries: 15
+    networks:
+      - defender-net
+
+  shadow-community:
+    image: reactive_defender-crapi-community:latest
+    container_name: shadow-community
+    environment:
+      - LOG_LEVEL=INFO
+      - IDENTITY_SERVICE=shadow-identity:8080
+      - DB_NAME=crapi
+      - DB_USER=admin
+      - DB_PASSWORD=crapisecretpassword
+      - DB_HOST=shadow-postgresdb
+      - DB_PORT=5432
+      - SERVER_PORT=8087
+      - MONGO_DB_HOST=shadow-mongodb
+      - MONGO_DB_PORT=27017
+      - MONGO_DB_USER=admin
+      - MONGO_DB_PASSWORD=crapisecretpassword
+      - MONGO_DB_NAME=crapi
+      - TLS_ENABLED=false
+    depends_on:
+      shadow-postgresdb:
+        condition: service_healthy
+      shadow-mongodb:
+        condition: service_started
+      shadow-identity:
+        condition: service_healthy
+    healthcheck:
+      test: /app/health.sh
+      interval: 15s
+      timeout: 15s
+      retries: 15
+    networks:
+      - defender-net
+
+  shadow-workshop:
+    image: reactive_defender-crapi-workshop:latest
+    container_name: shadow-workshop
+    environment:
+      - LOG_LEVEL=INFO
+      - IDENTITY_SERVICE=shadow-identity:8080
+      - DB_NAME=crapi
+      - DB_USER=admin
+      - DB_PASSWORD=crapisecretpassword
+      - DB_HOST=shadow-postgresdb
+      - DB_PORT=5432
+      - SERVER_PORT=8000
+      - MONGO_DB_HOST=shadow-mongodb
+      - MONGO_DB_PORT=27017
+      - MONGO_DB_USER=admin
+      - MONGO_DB_PASSWORD=crapisecretpassword
+      - MONGO_DB_NAME=crapi
+      - SECRET_KEY=crapi
+      - API_GATEWAY_URL=https://api.mypremiumdealership.com
+      - TLS_ENABLED=false
+    depends_on:
+      shadow-postgresdb:
+        condition: service_healthy
+      shadow-mongodb:
+        condition: service_started
+      shadow-identity:
+        condition: service_healthy
+      shadow-community:
+        condition: service_healthy
+    healthcheck:
+      test: /app/health.sh
+      interval: 15s
+      timeout: 15s
+      retries: 15
+    networks:
+      - defender-net
+
+  shadow-web:
+    image: reactive_defender-crapi-web:latest
+    container_name: shadow-web
+    environment:
+      - COMMUNITY_SERVICE=shadow-community:8087
+      - IDENTITY_SERVICE=shadow-identity:8080
+      - WORKSHOP_SERVICE=shadow-workshop:8000
+      - CHATBOT_SERVICE=shadow-workshop:8000
+      - MAILHOG_WEB_SERVICE=mailhog:8025
+      - TLS_ENABLED=false
+    depends_on:
+      shadow-identity:
+        condition: service_healthy
+      shadow-community:
+        condition: service_healthy
+      shadow-workshop:
+        condition: service_healthy
+    networks:
+      - defender-net
+
+volumes:
+  postgresql-data:
+  mongodb-data:
+  chromadb-data:
+  shadow-postgresql-data:
+  shadow-mongodb-data:
+
+networks:
+  defender-net:
+    driver: bridge

@@ -1,0 +1,211 @@
+"""Homepage — pentester briefing and objective listing.
+
+Accessible at /chains/home. Explains the CTF-style objectives
+without revealing the specific vulnerabilities.
+"""
+
+from __future__ import annotations
+
+from fastapi import APIRouter
+from fastapi.responses import HTMLResponse
+
+router = APIRouter(tags=["homepage"])
+
+CHAIN_META = {
+    "name": "Homepage",
+    "steps": 0,
+    "difficulty": "n/a",
+    "attack_types": [],
+    "detection_signals": [],
+}
+
+HOMEPAGE_HTML = """\
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>VehiTrack Security Challenge</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0a0e17;
+            color: #c9d1d9;
+            line-height: 1.6;
+        }
+        .container { max-width: 900px; margin: 0 auto; padding: 40px 20px; }
+        h1 {
+            color: #58a6ff;
+            font-size: 2em;
+            margin-bottom: 8px;
+        }
+        .subtitle {
+            color: #8b949e;
+            font-size: 1.1em;
+            margin-bottom: 40px;
+        }
+        h2 {
+            color: #e6edf3;
+            font-size: 1.3em;
+            margin: 30px 0 12px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #21262d;
+        }
+        .card {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 12px 0;
+        }
+        .card h3 {
+            color: #58a6ff;
+            margin-bottom: 6px;
+        }
+        .card p { color: #8b949e; font-size: 0.95em; }
+        .flag-format {
+            background: #1c2128;
+            border: 1px solid #30363d;
+            border-radius: 4px;
+            padding: 3px 8px;
+            font-family: monospace;
+            color: #7ee787;
+        }
+        .endpoint {
+            font-family: monospace;
+            color: #d2a8ff;
+            background: #1c2128;
+            padding: 2px 6px;
+            border-radius: 3px;
+        }
+        .rules {
+            background: #1c1206;
+            border: 1px solid #5a3e1b;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .rules h3 { color: #e3b341; margin-bottom: 8px; }
+        ul { padding-left: 24px; margin: 8px 0; }
+        li { margin: 6px 0; }
+        .score {
+            display: inline-block;
+            background: #21262d;
+            color: #58a6ff;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.85em;
+            font-weight: bold;
+        }
+        a { color: #58a6ff; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        .footer {
+            margin-top: 50px;
+            padding-top: 20px;
+            border-top: 1px solid #21262d;
+            color: #484f58;
+            font-size: 0.85em;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>VehiTrack Security Challenge</h1>
+    <p class="subtitle">
+        VehiTrack is a vehicle management platform. Your job: find and exploit
+        its security vulnerabilities. Each successful exploit earns a flag.
+    </p>
+
+    <h2>How it works</h2>
+    <div class="card">
+        <p>
+            The application is live at the root URL. It has a REST API for user management,
+            vehicle tracking, a community forum, a shop, and mechanic services.
+            Explore the API, find weaknesses, and prove exploitation by capturing flags.
+        </p>
+        <p style="margin-top: 10px;">
+            Flags look like: <span class="flag-format">XVEH{...}</span>
+        </p>
+        <p style="margin-top: 10px;">
+            Some flags are embedded in data you shouldn't be able to access.
+            Others require submitting proof of exploitation to the flag verifier.
+        </p>
+    </div>
+
+    <h2>Objectives</h2>
+
+    <div class="card">
+        <h3>1. Unauthorized Data Access <span class="score">3 flags</span></h3>
+        <p>Access data belonging to other users — vehicles, reports, profiles.
+        Prove it by finding planted secrets in the data or submitting proof of access.</p>
+    </div>
+
+    <div class="card">
+        <h3>2. Account Takeover <span class="score">2 flags</span></h3>
+        <p>Take over another user's account. There's more than one way in.
+        Prove it by logging in as the victim.</p>
+    </div>
+
+    <div class="card">
+        <h3>3. Privilege Escalation <span class="score">2 flags</span></h3>
+        <p>Gain admin or elevated access you shouldn't have.
+        The flag is returned when you access admin-only resources.</p>
+    </div>
+
+    <div class="card">
+        <h3>4. Injection &amp; Manipulation <span class="score">2 flags</span></h3>
+        <p>Exploit input handling flaws — the application doesn't always validate
+        what you send it. Prove it by triggering server errors or manipulating data.</p>
+    </div>
+
+    <div class="card">
+        <h3>5. Internal Discovery <span class="score">1 flag</span></h3>
+        <p>The application talks to internal services. Can you reach them?
+        Map the internal network to earn the flag.</p>
+    </div>
+
+    <div class="card">
+        <h3>6. AI Assistant Exploitation <span class="score">2 flags</span></h3>
+        <p>The platform has an AI chatbot. It's helpful — maybe too helpful.
+        Can you make it reveal information or act on behalf of other users?
+        (Requires providing your own LLM API key through the chat UI.)</p>
+    </div>
+
+    <h2>Flag Submission</h2>
+    <div class="card">
+        <p>
+            Found a flag? Submit it here:<br>
+            <span class="endpoint">POST /chains/flags/submit</span>
+            <span style="color:#8b949e;"> — body: {"flag": "XVEH{...}"}</span>
+        </p>
+        <p style="margin-top: 8px;">
+            Some objectives also have specific proof-of-exploit endpoints.
+            You'll find them if you look hard enough.
+        </p>
+    </div>
+
+    <div class="rules">
+        <h3>Rules of Engagement</h3>
+        <ul>
+            <li>All API endpoints are in scope</li>
+            <li>The frontend, API, and all backend services are fair game</li>
+            <li>Do NOT perform denial-of-service attacks</li>
+            <li>Do NOT attack the infrastructure (Docker, host OS, ngrok)</li>
+            <li>The chatbot requires your own API key — we don't provide one</li>
+            <li>There are <strong>12 flags</strong> total across all objectives</li>
+        </ul>
+    </div>
+
+    <div class="footer">
+        VehiTrack Security Challenge &mdash; Powered by Reactive Defender
+    </div>
+</div>
+</body>
+</html>
+"""
+
+
+@router.get("/chains/challenge", response_class=HTMLResponse)
+async def homepage():
+    return HOMEPAGE_HTML

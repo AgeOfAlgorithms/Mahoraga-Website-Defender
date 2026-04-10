@@ -1,0 +1,34 @@
+12:45:27 [INFO    ] Loaded 24 rules from crapi.yaml
+12:45:27 [INFO    ] Watcher test started. Scanning for 90s...
+12:45:27 [INFO    ]   nginx log: /home/sean/reactive_defender/logs/nginx/access.log
+12:45:27 [INFO    ]   extra logs: /home/sean/reactive_defender/logs
+12:45:27 [INFO    ]   events dir: /home/sean/reactive_defender/events
+12:45:30 [INFO    ] Detected internal_url_ssrf from 172.19.0.1 [high]
+12:45:30 [INFO    ] Detected recon_endpoint_scan from 172.19.0.1 [medium12:45:30 [INFO    ] Detected internal_url_ssrf from 172.19.0.1 [high]
+12:45:30 [INFO    ] Detected recon_endpoint_scan from 172.19.0.1 [medium]
+12:45:30 [INFO    ] Detected global_rate_limit_exceeded from 172.19.0.1 [medium]
+12:45:30 [INFO    ] Detected honeypot_trigger from 172.19.0.1 [high]
+12:45:30 [INFO    ] Detected not_found_probing from 172.19.0.1 [high]
+12:45:30 [INFO    ] !!  [HIGH] internal_url_ssrf | ip=172.19.0.1 path=-
+12:45:30 [INFO    ] !   [MEDIUM] recon_endpoint_scan | ip=172.19.0.1 path=-
+12:45:30 [INFO    ] !   [MEDIUM] global_rate_limit_exceeded | ip=172.19.0.1 path=-
+12:4512:46:57 [INFO    ] 
+12:46:57 [INFO    ] ============================================================
+12:46:57 [INFO    ] DETECTION SUMMARY (5 events in 90s)
+12:46:57 [INFO    ] ============================================================
+12:46:57 [INFO    ] 
+12:46:57 [INFO    ]   HIGH (3):
+12:46:57 [INFO    ]       1 × internal_url_ssrf
+12:46:57 [INFO    ]       1 × honeypot_trigger
+12:46:57 [INFO    ]       1 × not_found_probing
+12:46:57 [INFO    ] 
+12:46:57 [INFO    ]   MEDIUM (2):
+12:46:57 [INFO    ]       1 × recon_endpoint_scan
+12:46:57 [INFO    ]       1 × global_rate_limit_exceeded
+12:46:57 [INFO    ] 
+12:46:57 [INFO    ]   Total unique event types: 5
+12:46:57 [INFO    ]   Total events: 5
+12:46:57 [INFO    ]   Results saved to /home/sean/reactive_defender/test_logs/watcher_detections.json
+5
+12:46:40 [INFO    ]   Total events: 6
+12:46:40 [INFO    ]   Results saved to /home/sean/reactive_defender/test_logs/watcher_detections.json

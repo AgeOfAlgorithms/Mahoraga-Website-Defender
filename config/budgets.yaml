@@ -1,0 +1,24 @@
+# Cost control configuration
+
+budget:
+  daily_ceiling_usd: 50.00
+  per_incident_cap_usd: 10.00
+  hourly_api_call_limit: 100
+  circuit_breaker_multiplier: 3.0  # pause if spend rate exceeds Nx baseline
+
+# Model selection by task
+model_tiers:
+  log_parsing: none           # traditional, no LLM
+  known_pattern_triage: haiku  # cheap classification
+  novel_anomaly_triage: sonnet # needs more reasoning
+  code_patch: opus             # security-critical
+  config_patch: sonnet         # less critical
+  patch_review: sonnet         # needs reasoning but not generation
+  user_flow_test: sonnet       # needs browser interaction
+
+# Batching: non-urgent events are grouped and analyzed together
+batching:
+  critical_delay_seconds: 0    # immediate
+  high_delay_seconds: 30
+  medium_delay_seconds: 300    # 5 minutes
+  low_delay_seconds: 900       # 15 minutes

@@ -1,0 +1,217 @@
+{
+  "duration_seconds": 60,
+  "total_events": 17,
+  "unique_types": 16,
+  "by_type": {
+    "honeypot_v3_admin": 2,
+    "honeypot_debug_tokens": 1,
+    "recon_endpoint_scan": 1,
+    "honeypot_internal_health": 1,
+    "honeypot_user_login": 1,
+    "honeypot_workshop_internal": 1,
+    "global_rate_limit_exceeded": 1,
+    "honeypot_community_admin": 1,
+    "honeypot_community_export": 1,
+    "honeypot_community_debug": 1,
+    "honeypot_trigger": 1,
+    "honeypot_dotenv": 1,
+    "honeypot_dotgit": 1,
+    "honeypot_token_usage": 1,
+    "honeypot_coupon_usage": 1,
+    "not_found_probing": 1
+  },
+  "by_severity": {
+    "critical": 10,
+    "medium": 2,
+    "high": 5
+  },
+  "events": [
+    {
+      "event_id": "evt_4c0ce5753f0d",
+      "timestamp": 1775749715.1920989,
+      "event_type": "honeypot_v3_admin",
+      "severity": "critical",
+      "source_ip": "172.19.0.1",
+      "path": "",
+      "detection": "generic_signature",
+      "log_source": "nginx",
+      "message_preview": "172.19.0.1 - - [09/Apr/2026:15:48:35 +0000] \"GET /identity/api/v3/admin/users HTTP/1.1\" 200 252 \"-\" \"curl/8.9.1\" rt=0.000 auth=\"-\" body=\"-\""
+    },
+    {
+      "event_id": "evt_d7c47f51567a",
+      "timestamp": 1775749716.192763,
+      "event_type": "honeypot_v3_admin",
+      "severity": "critical",
+      "source_ip": "172.19.0.1",
+      "path": "",
+      "detection": "generic_signature",
+      "log_source": "nginx",
+      "message_preview": "172.19.0.1 - - [09/Apr/2026:15:48:35 +0000] \"GET /identity/api/v3/admin/config HTTP/1.1\" 200 184 \"-\" \"curl/8.9.1\" rt=0.000 auth=\"-\" body=\"-\""
+    },
+    {
+      "event_id": "evt_6a23348f4d4f",
+      "timestamp": 1775749716.1928608,
+      "event_type": "honeypot_debug_tokens",
+      "severity": "critical",
+      "source_ip": "172.19.0.1",
+      "path": "",
+      "detection": "generic_signature",
+      "log_source": "nginx",
+      "message_preview": "172.19.0.1 - - [09/Apr/2026:15:48:35 +0000] \"GET /identity/api/debug/tokens HTTP/1.1\" 200 160 \"-\" \"curl/8.9.1\" rt=0.000 auth=\"-\" body=\"-\""
+    },
+    {
+      "event_id": "evt_83f464396663",
+      "timestamp": 1775749716.1928897,
+      "event_type": "recon_endpoint_scan",
+      "severity": "medium",
+      "source_ip": "172.19.0.1",
+      "path": "",
+      "detection": "session_correlation",
+      "log_source": "nginx",
+      "message_preview": ""
+    },
+    {
+      "event_id": "evt_dfb62dc2113b",
+      "timestamp": 1775749716.192938,
+      "event_type": "honeypot_internal_health",
+      "severity": "high",
+      "source_ip": "172.19.0.1",
+      "path": "",
+      "detection": "generic_signature",
+      "log_source": "nginx",
+      "message_preview": "172.19.0.1 - - [09/Apr/2026:15:48:35 +0000] \"GET /identity/api/internal/health HTTP/1.1\" 200 156 \"-\" \"curl/8.9.1\" rt=0.000 auth=\"-\" body=\"-\""
+    },
+    {
+      "event_id": "evt_52e301bd3f7b",
+      "timestamp": 1775749716.193025,
+      "event_type": "honeypot_user_login",
+      "severity": "critical",
+      "source_ip": "172.19.0.1",
+      "path": "",
+      "detection": "generic_signature",
+      "log_source": "nginx",
+      "message_preview": "172.19.0.1 - - [09/Apr/2026:15:48:35 +0000] \"POST /identity/api/auth/login HTTP/1.1\" 401 99 \"-\" \"curl/8.9.1\" rt=0.006 auth=\"-\" body=\"{\\x22email\\x22:\\x"
+    },
+    {
+      "event_id": "evt_be1550493f39",
+      "timestamp": 1775749716.1930969,
+      "event_type": "honeypot_workshop_internal",
+      "severity": "critical",
+      "source_ip": "172.19.0.1",
+      "path": "",
+      "detection": "generic_signature",
+      "log_source": "nginx",
+      "message_preview": "172.19.0.1 - - [09/Apr/2026:15:48:35 +0000] \"GET /workshop/api/internal/config HTTP/1.1\" 200 284 \"-\" \"curl/8.9.1\" rt=0.003 auth=\"Bearer None\" body=\"-\""
+    },
+    {
+      "event_id": "evt_d48d40c2252d",
+      "timestamp": 1775749716.1932797,
+      "event_type": "global_rate_limit_exceeded",
+      "severity": "medium",
+      "source_ip": "172.19.0.1",
+      "path": "",
+      "detection": "",
+      "log_source": "nginx",
+      "message_preview": "172.19.0.1 - - [09/Apr/2026:15:48:35 +0000] \"GET /workshop/api/internal/coupons/generate HTTP/1.1\" 200 159 \"-\" \"curl/8.9.1\" rt=0.002 auth=\"Bearer None"
+    },
+    {
+      "event_id": "evt_1bb46d459a2a",
+      "timestamp": 1775749716.1935353,
+      "event_type": "honeypot_community_admin",
+      "severity": "critical",
+      "source_ip": "172.19.0.1",
+      "path": "",
+      "detection": "generic_signature",
+      "log_source": "nginx",
+      "message_preview": "172.19.0.1 - - [09/Apr/2026:15:48:35 +0000] \"GET /community/api/v2/admin/moderate HTTP/1.1\" 200 167 \"-\" \"curl/8.9.1\" rt=0.000 auth=\"Bearer None\" body="
+    },
+    {
+      "event_id": "evt_066211508607",
+      "timestamp": 1775749716.1937313,
+      "event_type": "honeypot_community_export",
+      "severity": "critical",
+      "source_ip": "172.19.0.1",
+      "path": "",
+      "detection": "generic_signature",
+      "log_source": "nginx",
+      "message_preview": "172.19.0.1 - - [09/Apr/2026:15:48:35 +0000] \"GET /community/api/v2/internal/export HTTP/1.1\" 200 167 \"-\" \"curl/8.9.1\" rt=0.000 auth=\"Bearer None\" body"
+    },
+    {
+      "event_id": "evt_13dcf0050043",
+      "timestamp": 1775749716.1938279,
+      "event_type": "honeypot_community_debug",
+      "severity": "critical",
+      "source_ip": "172.19.0.1",
+      "path": "",
+      "detection": "generic_signature",
+      "log_source": "nginx",
+      "message_preview": "172.19.0.1 - - [09/Apr/2026:15:48:35 +0000] \"GET /community/api/v2/debug/db HTTP/1.1\" 200 167 \"-\" \"curl/8.9.1\" rt=0.000 auth=\"Bearer None\" body=\"-\""
+    },
+    {
+      "event_id": "evt_b1bba0e62674",
+      "timestamp": 1775749716.193901,
+      "event_type": "honeypot_trigger",
+      "severity": "high",
+      "source_ip": "172.19.0.1",
+      "path": "/.env",
+      "detection": "honeypot_trigger",
+      "log_source": "nginx",
+      "message_preview": "172.19.0.1 - - [09/Apr/2026:15:48:35 +0000] \"GET /.env HTTP/1.1\" 200 46 \"-\" \"curl/8.9.1\" rt=0.000 auth=\"-\" body=\"-\""
+    },
+    {
+      "event_id": "evt_6888aec90ef1",
+      "timestamp": 1775749716.1939325,
+      "event_type": "honeypot_dotenv",
+      "severity": "high",
+      "source_ip": "172.19.0.1",
+      "path": "",
+      "detection": "generic_signature",
+      "log_source": "nginx",
+      "message_preview": "172.19.0.1 - - [09/Apr/2026:15:48:35 +0000] \"GET /.env HTTP/1.1\" 200 46 \"-\" \"curl/8.9.1\" rt=0.000 auth=\"-\" body=\"-\""
+    },
+    {
+      "event_id": "evt_349fe3951fe8",
+      "timestamp": 1775749716.194031,
+      "event_type": "honeypot_dotgit",
+      "severity": "high",
+      "source_ip": "172.19.0.1",
+      "path": "",
+      "detection": "generic_signature",
+      "log_source": "nginx",
+      "message_preview": "172.19.0.1 - - [09/Apr/2026:15:48:35 +0000] \"GET /.git HTTP/1.1\" 200 46 \"-\" \"curl/8.9.1\" rt=0.000 auth=\"-\" body=\"-\""
+    },
+    {
+      "event_id": "evt_d78725fcffd0",
+      "timestamp": 1775749716.1942344,
+      "event_type": "honeypot_token_usage",
+      "severity": "critical",
+      "source_ip": "172.19.0.1",
+      "path": "",
+      "detection": "generic_signature",
+      "log_source": "nginx",
+      "message_preview": "172.19.0.1 - - [09/Apr/2026:15:48:35 +0000] \"GET /identity/api/v2/user/dashboard HTTP/1.1\" 404 69 \"-\" \"curl/8.9.1\" rt=0.004 auth=\"Bearer eyJ0eXAiOiJKV"
+    },
+    {
+      "event_id": "evt_85e684abcd5a",
+      "timestamp": 1775749716.1943722,
+      "event_type": "honeypot_coupon_usage",
+      "severity": "critical",
+      "source_ip": "172.19.0.1",
+      "path": "",
+      "detection": "generic_signature",
+      "log_source": "nginx",
+      "message_preview": "172.19.0.1 - - [09/Apr/2026:15:48:35 +0000] \"POST /workshop/api/shop/apply_coupon HTTP/1.1\" 401 43 \"-\" \"curl/8.9.1\" rt=0.008 auth=\"Bearer None\" body=\""
+    },
+    {
+      "event_id": "evt_27e558aec634",
+      "timestamp": 1775749716.1957464,
+      "event_type": "not_found_probing",
+      "severity": "high",
+      "source_ip": "172.19.0.1",
+      "path": "",
+      "detection": "session_correlation",
+      "log_source": "nginx",
+      "message_preview": ""
+    }
+  ]
+}
