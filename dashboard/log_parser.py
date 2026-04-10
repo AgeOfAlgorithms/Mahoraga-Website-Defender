@@ -11,7 +11,7 @@ from datetime import datetime
 # "$http_referer" "$http_user_agent" rt=$request_time
 # auth="$http_authorization" body="$request_body" env="$target_env"
 ACCESS_RE = re.compile(
-    r'(?P<ip>\S+) - (?P<user>\S+) \[(?P<time>[^\]]+)\] '
+    r'(?P<ip>[^\s]+(?:,\s*[^\s]+)*) - (?P<user>\S+) \[(?P<time>[^\]]+)\] '
     r'"(?P<method>\S+) (?P<path>\S+) (?P<proto>[^"]*)" '
     r'(?P<status>\d+) (?P<bytes>\d+) '
     r'"(?P<referer>[^"]*)" "(?P<ua>[^"]*)" '
@@ -25,7 +25,7 @@ ACCESS_RE = re.compile(
 # $remote_addr [$time_local] "$request" $status
 # auth="$http_authorization" req_body="$request_body" resp_body="$resp_body"
 SHADOW_RE = re.compile(
-    r'(?P<ip>\S+) \[(?P<time>[^\]]+)\] '
+    r'(?P<ip>[^\s]+(?:,\s*[^\s]+)*) \[(?P<time>[^\]]+)\] '
     r'"(?P<method>\S+) (?P<path>\S+) (?P<proto>[^"]*)" '
     r'(?P<status>\d+) '
     r'auth="(?P<auth>[^"]*)" '

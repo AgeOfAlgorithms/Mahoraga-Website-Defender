@@ -33,11 +33,6 @@ rules:
     severity: critical
     description: "Prototype pollution attempt"
 
-  - name: vuln_chain_flag_access
-    pattern: 'XVEH\{'
-    severity: critical
-    description: "Vuln chain flag value appearing in traffic — chain was completed"
-
   # ── Source-level honeypot endpoints (in crAPI fork) ─────────────
   # Identity service honeypots
   - name: honeypot_v3_admin

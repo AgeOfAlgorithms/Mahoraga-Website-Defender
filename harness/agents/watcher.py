@@ -409,7 +409,7 @@ class SessionTracker:
 
 # Matches nginx "detailed" log format
 LOG_PATTERN = re.compile(
-    r'^(?P<ip>\S+) - \S+ \[(?P<time>[^\]]+)\] '
+    r'^(?P<ip>[^\s]+(?:,\s*[^\s]+)*) - \S+ \[(?P<time>[^\]]+)\] '
     r'"(?P<method>\S+) (?P<path>\S+) \S+" (?P<status>\d+) (?P<bytes>\d+) '
     r'"(?P<referer>[^"]*)" "(?P<ua>[^"]*)" '
     r'rt=(?P<rt>\S+)'
@@ -551,7 +551,10 @@ class Watcher:
             )
 
         # 5. Scan additional log sources (crAPI services, Postgres)
-        events.extend(self._scan_extra_logs())
+        # Extra log scanning (postgres audit, container logs) disabled —
+        # too noisy with false positives from normal app queries.
+        # The nginx access logs + shadow analyzer are the primary detection path.
+        # events.extend(self._scan_extra_logs())
 
         # Deduplicate again after extra logs
         seen2 = set()
@@ -819,7 +822,7 @@ class Watcher:
 
         # JWT anomalies in auth header
         if auth and "malformed_jwt" in profile.suspicious_signals:
-            if self._is_suspicious_jwt(auth):
+            if self._check_suspicious_jwt(auth):
                 events.append(SecurityEvent(
                     event_type="suspicious_jwt",
                     severity=Severity.HIGH,
@@ -833,6 +836,25 @@ class Watcher:
                 ))
 
         return events
+
+    @staticmethod
+    def _check_suspicious_jwt(auth: str) -> bool:
+        """Check if a JWT token looks suspicious (alg:none, very short, malformed)."""
+        import base64
+        token = auth.replace("Bearer ", "").strip()
+        parts = token.split(".")
+        if len(parts) < 2:
+            return True  # not a valid JWT structure
+        try:
+            # Pad and decode header
+            header_b64 = parts[0] + "=" * (4 - len(parts[0]) % 4)
+            header = base64.urlsafe_b64decode(header_b64).decode()
+            # Check for alg:none or empty signature
+            if '"none"' in header.lower() or (len(parts) == 3 and parts[2] == ""):
+                return True
+        except Exception:
+            return True  # can't decode = suspicious
+        return False
 
     def _check_generic_patterns(
         self, line: str, parsed: dict | None = None
