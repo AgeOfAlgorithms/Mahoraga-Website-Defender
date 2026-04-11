@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 
 const SEVERITY_COLORS = {
   critical: "bg-red-900/60 border-l-4 border-red-500",
@@ -301,11 +301,18 @@ function LogList({ logs, expanded, toggleExpand, getRowClass, eventsByPath }) {
   ));
 }
 
-function LogPanel({ title, titleColor, logs, expanded, toggleExpand, getRowClass, eventsByPath, autoScroll, side }) {
+function LogPanel({ title, titleColor, logs, expanded, toggleExpand, getRowClass, eventsByPath, autoScroll }) {
   const ref = useRef(null);
+  const isAtBottom = useRef(true);
+
+  const handleScroll = useCallback(() => {
+    const el = ref.current;
+    if (!el) return;
+    isAtBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
+  }, []);
 
   useEffect(() => {
-    if (autoScroll && ref.current) {
+    if (autoScroll && isAtBottom.current && ref.current) {
       ref.current.scrollTop = ref.current.scrollHeight;
     }
   }, [logs.length, autoScroll]);
@@ -316,7 +323,7 @@ function LogPanel({ title, titleColor, logs, expanded, toggleExpand, getRowClass
         <span>{title}</span>
         <span className="text-gray-500 font-mono font-normal">{logs.length}</span>
       </div>
-      <div ref={ref} className="flex-1 overflow-y-auto font-mono text-xs">
+      <div ref={ref} onScroll={handleScroll} className="flex-1 overflow-y-auto font-mono text-xs">
         <LogList
           logs={logs}
           expanded={expanded}
