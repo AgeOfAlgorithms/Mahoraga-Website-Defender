@@ -154,7 +154,7 @@ def _execute_command(command: str, timeout: int = 60) -> str:
             capture_output=True,
             text=True,
             timeout=timeout,
-            cwd=str(CRAPI_FORK_DIR),
+            cwd=str(_PROJECT_DIR),
         )
         output = result.stdout
         if result.stderr:
