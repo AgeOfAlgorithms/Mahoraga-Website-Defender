@@ -111,6 +111,7 @@ class Tester:
                 },
             },
             cwd=self.project_dir,
+            permission_mode="bypassPermissions",
         )
 
         response_text = ""

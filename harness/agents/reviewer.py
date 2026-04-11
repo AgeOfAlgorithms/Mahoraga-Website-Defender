@@ -84,6 +84,7 @@ class Reviewer:
                           "Use docker exec to verify patches inside containers if needed.",
             max_turns=3,
             allowed_tools=["Bash"],
+            permission_mode="bypassPermissions",
         )
 
         response_text = ""

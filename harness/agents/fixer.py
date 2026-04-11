@@ -133,6 +133,7 @@ class Fixer:
             ),
             max_turns=15,
             allowed_tools=["Bash"],
+            permission_mode="bypassPermissions",
         )
 
         response_text = ""
