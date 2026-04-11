@@ -5,6 +5,7 @@ import AgentsView from "./components/AgentsView";
 import KanbanBoard from "./components/KanbanBoard";
 import CodeDiff from "./components/CodeDiff";
 import VulnStatus from "./components/VulnStatus";
+import CostsView from "./components/CostsView";
 
 const TABS = [
   { id: "logs", label: "Logs" },
@@ -12,6 +13,7 @@ const TABS = [
   { id: "pipeline", label: "Pipeline" },
   { id: "patches", label: "Patches" },
   { id: "vulns", label: "Vulnerabilities" },
+  { id: "costs", label: "Costs" },
 ];
 
 const MAX_LOGS = 800;
@@ -224,6 +226,9 @@ export default function App() {
         )}
         {tab === "vulns" && (
           <VulnStatus vulns={vulns} patches={patches} events={events} />
+        )}
+        {tab === "costs" && (
+          <CostsView />
         )}
       </main>
     </div>

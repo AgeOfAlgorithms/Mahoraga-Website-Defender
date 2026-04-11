@@ -228,6 +228,56 @@ async def reset_scoreboard():
         return {"status": "error", "message": str(e)}
 
 
+@app.get("/api/costs")
+async def get_costs():
+    """Return API cost breakdown by agent type."""
+    # Read cost ledger
+    ledger_file = AUDIT_DIR / "cost_ledger.json"
+    ledger = {}
+    if ledger_file.exists():
+        try:
+            ledger = json.loads(ledger_file.read_text())
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    incident_spend = ledger.get("incident_spend", {})
+
+    # Read audit entries to map event_ids to agent types
+    event_to_agent = {}
+    for f in AUDIT_DIR.glob("*.json"):
+        if f.name == "cost_ledger.json":
+            continue
+        try:
+            entry = json.loads(f.read_text())
+            eid = entry.get("event_id", "")
+            agent = entry.get("agent", "")
+            if eid and agent:
+                # Use the first agent that touched this event
+                if eid not in event_to_agent:
+                    event_to_agent[eid] = agent
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    # Group spend by agent type
+    agent_costs = {}
+    for event_id, cost in incident_spend.items():
+        agent = event_to_agent.get(event_id, "unknown")
+        # Normalize instance names: fixer_1 → fixer
+        agent_type = agent.split("_")[0] if "_" in agent and agent.split("_")[-1].isdigit() else agent
+        # Special case: shadow_analysis is the analyzer
+        if event_id == "shadow_analysis":
+            agent_type = "shadow_analyzer"
+        agent_costs[agent_type] = agent_costs.get(agent_type, 0) + cost
+
+    return {
+        "daily_spend": round(ledger.get("daily_spend", 0), 4),
+        "daily_budget": ledger.get("daily_budget", 50.0),
+        "by_agent": {k: round(v, 4) for k, v in sorted(agent_costs.items())},
+        "incident_count": len(incident_spend),
+        "paused": ledger.get("paused", False),
+    }
+
+
 @app.get("/api/agents/counts")
 async def get_agent_counts():
     """Return current agent instance counts."""
