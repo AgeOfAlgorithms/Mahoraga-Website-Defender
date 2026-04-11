@@ -125,7 +125,9 @@ class Fixer:
                 "You are a security engineer. Fix ONLY the specific vulnerability "
                 "described in the triage report. All file access must be through "
                 "docker exec commands — never read or write files directly. "
-                "Respond with JSON only after applying the fix."
+                "After applying the fix, your FINAL message must be ONLY a JSON "
+                "object with the response format specified. No explanation, no "
+                "markdown, no code fences — just the raw JSON object."
             ),
             max_turns=15,
             allowed_tools=["Bash"],
@@ -146,8 +148,14 @@ class Fixer:
 
         try:
             text = response_text.strip()
+            # Try to extract JSON from the response (may be mixed with text)
             if text.startswith("```"):
-                text = text.split("\n", 1)[1].rsplit("```", 1)[0]
+                text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+            # Find the JSON object in the text
+            start = text.find("{")
+            end = text.rfind("}") + 1
+            if start >= 0 and end > start:
+                text = text[start:end]
             data = json.loads(text)
         except json.JSONDecodeError:
             logger.error("Failed to parse fixer response: %s", response_text[:200])
