@@ -32,7 +32,7 @@ BASH_TOOL = {
     "type": "function",
     "function": {
         "name": "bash",
-        "description": "Execute a bash command. Only docker exec commands are allowed.",
+        "description": "Execute a bash command. Only 'docker exec' commands are allowed. For pipes/chaining, use: docker exec <container> bash -c 'cmd1 | cmd2'",
         "parameters": {
             "type": "object",
             "properties": {
@@ -50,6 +50,16 @@ BASH_TOOL = {
 def _validate_command(command: str) -> str | None:
     """Validate that a command is a safe docker exec. Returns error message or None."""
     cmd = command.strip()
+
+    # Block shell operators that would execute on the HOST (security hole)
+    # Pipes, semicolons, &&, ||, backticks, $() — all bypass docker exec
+    # Exception: pipes inside a quoted bash -c string are fine
+    # Simple check: if the command has a pipe/semicolon OUTSIDE of quotes, block it
+    if not _has_bash_c(cmd):
+        for op in ["|", "&&", "||", ";", "`", "$("]:
+            if op in cmd:
+                return (f"Shell operator '{op}' not allowed outside docker exec. "
+                        "Use: docker exec <container> bash -c 'cmd1 | cmd2' instead")
 
     # Must start with docker exec
     if not cmd.startswith("docker exec"):
@@ -81,6 +91,11 @@ def _validate_command(command: str) -> str | None:
             return f"Access to '{blocked}' is not allowed"
 
     return None
+
+
+def _has_bash_c(cmd: str) -> bool:
+    """Check if command uses bash -c (pipes inside quotes are safe)."""
+    return "bash -c" in cmd or "sh -c" in cmd
 
 
 def _execute_command(command: str, timeout: int = 30) -> str:

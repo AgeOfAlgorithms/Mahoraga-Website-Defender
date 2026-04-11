@@ -47,8 +47,10 @@ export default function KanbanBoard({ events, audit, patches }) {
       const patchProposed = actions.includes("patch_proposed");
 
       const fixing = actions.includes("fixer_started");
+      const skipped = actions.includes("skipped");
       let status = "analyzing";
       if (deployed) status = "resolved";
+      else if (skipped) status = "resolved";
       else if (testFailed) status = "fix_testing";
       else if (reviewPassed) status = "fix_testing";
       else if (reviewRejected) status = "analyzing";

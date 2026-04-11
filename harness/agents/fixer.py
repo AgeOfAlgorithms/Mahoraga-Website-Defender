@@ -37,15 +37,24 @@ on the host filesystem.
 ## Exploit Report (from shadow environment)
 {triage_json}
 
-## How to read files inside containers
-Use the bash tool to run docker exec commands:
+## Source code layout (crapi-workshop at /app/)
+- /app/crapi/shop/views.py — shop, orders, coupons
+- /app/crapi/mechanic/views.py — mechanic reports, contact_mechanic (SSRF)
+- /app/crapi/merchant/views.py — merchant/vehicle endpoints
+- /app/crapi/user/views.py — admin, management dashboard, API keys, fleet status
+- /app/utils/jwt.py — JWT authentication decorator
+- /app/crapi_site/urls.py — URL routing
+- /app/crapi_site/settings.py — Django settings
+
+## How to read files
 ```
 docker exec crapi-workshop cat /app/crapi/shop/views.py
-docker exec crapi-workshop grep -n "vulnerable_pattern" /app/crapi/mechanic/views.py
-docker exec nginx-proxy cat /usr/local/openresty/nginx/conf/nginx.conf
+docker exec crapi-workshop bash -c 'grep -n "pattern" /app/crapi/mechanic/views.py'
 ```
+IMPORTANT: For pipes, use bash -c: `docker exec crapi-workshop bash -c 'cat file | grep pattern'`
+Do NOT use pipes outside docker exec (e.g. `docker exec ... | grep ...` is WRONG).
 
-## How to apply patches inside containers
+## How to apply patches
 Use docker exec with sed or python to edit files in-place:
 ```
 docker exec crapi-workshop sed -i 's/old_code/new_code/' /app/crapi/shop/views.py
@@ -58,9 +67,9 @@ p.write_text(code)
 "
 ```
 
-For nginx, edit the config then reload:
+For nginx:
 ```
-docker exec nginx-proxy sed -i 's/old_config/new_config/' /usr/local/openresty/nginx/conf/nginx.conf
+docker exec nginx-proxy sed -i 's/old/new/' /usr/local/openresty/nginx/conf/nginx.conf
 docker exec nginx-proxy nginx -s reload
 ```
 

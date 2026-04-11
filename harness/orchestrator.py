@@ -265,6 +265,20 @@ class Orchestrator:
 
         event_id = attack.get("_event_id", f"shadow_{__import__('uuid').uuid4().hex[:8]}")
 
+        # Skip vulns in non-patchable services (Java identity, Go community)
+        request_line = attack.get("request", "")
+        vuln_lower = vuln.lower() + " " + request_line.lower()
+        if any(kw in vuln_lower for kw in [
+            "/auth/login", "/auth/signup", "/auth/v2/check-otp",
+            "credential_stuffing", "brute force login",
+            "/identity/", "crapi-identity",
+        ]):
+            logger.info("Skipping unpatchable vuln (identity service / Java): %s", exploit_type)
+            self._audit("skipped", event_id, "fixer",
+                         f"Unpatchable (Java identity service): {exploit_type}")
+            self._pending_vulns.discard(vuln[:80])
+            return
+
         logger.warning(
             "FIXER: type=%s severity=%s vuln=%s",
             exploit_type, severity, vuln[:80],
