@@ -200,7 +200,7 @@ export default function LogViewer({ prodLogs, shadowLogs, watcherPaths, analyzer
                   {entry.status}
                 </span>
                 <span className="flex-1 truncate text-gray-300">{entry.path}</span>
-                <span className="text-gray-600 w-20 shrink-0 text-right">{entry.ip}</span>
+                <span className="text-gray-600 w-32 shrink-0 text-right">{entry.ip}</span>
                 {entry.env && (
                   <span className={`text-[10px] px-1.5 rounded ${
                     entry.env === "shadow" ? "bg-purple-900 text-purple-300" : "bg-gray-800 text-gray-500"

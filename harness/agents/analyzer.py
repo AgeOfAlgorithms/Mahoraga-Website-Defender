@@ -87,6 +87,7 @@ class Analyzer:
         prompt = TRIAGE_PROMPT.format(event_json=event_json)
 
         options = ClaudeAgentOptions(
+            model="claude-sonnet-4-6",
             system_prompt="You are a security triage analyst. Respond with JSON only.",
             max_turns=1,
         )

@@ -123,6 +123,7 @@ class Fixer:
         prompt = FIX_PROMPT.format(triage_json=triage_json)
 
         options = ClaudeAgentOptions(
+            model="claude-sonnet-4-6",
             system_prompt=(
                 "You are a security engineer. Fix ONLY the specific vulnerability "
                 "described in the triage report. All file access must be through "

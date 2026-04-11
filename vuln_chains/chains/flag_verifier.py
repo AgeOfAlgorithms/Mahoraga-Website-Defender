@@ -125,7 +125,7 @@ async def submit_flag(submission: FlagSubmission):
             "valid": False,
             "message": (
                 "Nice try, but this flag is fake. At some point during your session, "
-                "you were transparently redirected to a decoy environment. The data "
+                "you were silently redirected to a decoy environment. The data "
                 "you exfiltrated was planted there specifically to waste your time. "
                 "The real flags are in the production environment — you'll need to "
                 "start a fresh session and be more careful this time."

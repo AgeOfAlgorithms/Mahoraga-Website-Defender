@@ -97,6 +97,7 @@ class Tester:
 
         # Tester gets Playwright MCP for real browser interaction
         options = ClaudeAgentOptions(
+            model="claude-sonnet-4-6",
             system_prompt=(
                 "You are a QA tester. Use the browser tools to navigate the "
                 "application and verify user flows work. Respond with JSON only."

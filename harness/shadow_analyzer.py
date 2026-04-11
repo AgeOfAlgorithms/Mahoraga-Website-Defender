@@ -202,6 +202,7 @@ class ShadowAnalyzer:
         prompt = ANALYSIS_PROMPT.format(log_entries=log_text)
 
         options = ClaudeAgentOptions(
+            model="claude-sonnet-4-6",
             system_prompt=(
                 "You are a security analyst. Analyze access logs to detect "
                 "successful attacks. Respond with JSON only. Be conservative — "

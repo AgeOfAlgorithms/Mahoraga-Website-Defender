@@ -24,7 +24,7 @@ export default function CodeDiff({ patches, audit }) {
   return (
     <div className="h-full flex">
       {/* Patch list */}
-      <div className="w-80 shrink-0 border-r border-gray-800 overflow-y-auto">
+      <div className="w-64 shrink-0 border-r border-gray-800 overflow-y-auto">
         <div className="p-3 border-b border-gray-800">
           <h2 className="text-sm font-bold text-gray-300">Patches ({enrichedPatches.length})</h2>
         </div>
@@ -179,12 +179,14 @@ function TimelineEntry({ entry }) {
   const icons = {
     detection: "\u{1F50D}",
     shadow_exploit_detected: "\u{1F47E}",
-    patch_proposed: "\u{1F527}",
-    deployed: "\u2705",
-    escalated: "\u26A0\uFE0F",
+    fixer_started: "\u{1F527}",
+    patch_proposed: "\u{1F4E6}",
+    review_passed: "\u2705",
+    review_rejected: "\u274C",
+    deployed: "\u{1F680}",
+    test_failed: "\u26A0\uFE0F",
     error: "\u274C",
     session_redirected_to_shadow: "\u{1F300}",
-    chain_complete: "\u26D3\uFE0F",
   };
 
   return (
@@ -194,7 +196,7 @@ function TimelineEntry({ entry }) {
         {new Date(entry.timestamp * 1000).toLocaleTimeString()}
       </span>
       <span className="text-gray-400 shrink-0 w-16 font-medium">{entry.agent}</span>
-      <span className="text-gray-300">{entry.detail}</span>
+      <span className="text-gray-300 break-words min-w-0">{entry.detail}</span>
     </div>
   );
 }
