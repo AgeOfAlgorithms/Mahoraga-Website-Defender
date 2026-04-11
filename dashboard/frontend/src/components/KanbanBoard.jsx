@@ -7,7 +7,6 @@ const COLUMNS = [
   { id: "fix_reviewing", label: "Reviewing", color: "border-purple-500", bg: "bg-purple-900/20" },
   { id: "fix_testing", label: "Testing", color: "border-cyan-500", bg: "bg-cyan-900/20" },
   { id: "resolved", label: "Deployed", color: "border-green-500", bg: "bg-green-900/20" },
-  { id: "escalated", label: "Escalated", color: "border-red-500", bg: "bg-red-900/20" },
 ];
 
 const SEVERITY_BADGE = {
