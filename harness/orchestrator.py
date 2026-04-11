@@ -94,6 +94,18 @@ class Orchestrator:
         self._pending_vulns: set[str] = set()   # vuln descriptions currently queued
         self._fixed_types: set[str] = set()     # exploit types already patched
 
+        # Restore fixed types from previous patches on disk
+        for patch_file in self.patches_dir.glob("*.json"):
+            try:
+                data = json.loads(patch_file.read_text())
+                if data.get("classification"):
+                    self._fixed_types.add(data["classification"])
+            except (json.JSONDecodeError, OSError):
+                pass
+        if self._fixed_types:
+            logger.info("Restored %d fixed types from disk: %s",
+                        len(self._fixed_types), self._fixed_types)
+
         # Shadow LLM analyzer — generic exploit detection every 15s
         self.shadow_analyzer = ShadowAnalyzer(
             shadow_log_path=project_dir / "logs" / "nginx" / "shadow.log",
@@ -129,7 +141,8 @@ class Orchestrator:
             "scanner": self._scan_loop(poll_interval),
             "processor": self._process_loop(),
             "shadow_analyzer": self.shadow_analyzer.run(),
-            "fixer": self._agent_loop("fixer", self._exploit_queue, self._run_fixer),
+            "fixer_1": self._agent_loop("fixer_1", self._exploit_queue, self._run_fixer),
+            "fixer_2": self._agent_loop("fixer_2", self._exploit_queue, self._run_fixer),
             "reviewer": self._agent_loop("reviewer", self._review_queue, self._run_reviewer),
         }
 
