@@ -63,8 +63,10 @@ docker exec nginx-proxy nginx -s reload
 ```
 
 ## Patchable containers
-- **crapi-workshop** (Python/Django at /app/crapi/): auto-reloads on file change
-- **nginx-proxy** (OpenResty at /usr/local/openresty/nginx/conf/): needs `nginx -s reload`
+- **crapi-workshop** (Python/Django at /app/crapi/): after editing, reload with:
+  `docker exec crapi-workshop pkill -HUP -f gunicorn`
+- **nginx-proxy** (OpenResty at /usr/local/openresty/nginx/conf/): after editing, reload with:
+  `docker exec nginx-proxy nginx -s reload`
 
 ## NOT patchable (skip these)
 - crapi-identity (Java JAR — can't hot-patch)

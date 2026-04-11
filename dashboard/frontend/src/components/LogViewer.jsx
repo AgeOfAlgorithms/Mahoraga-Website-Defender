@@ -192,7 +192,7 @@ export default function LogViewer({ prodLogs, shadowLogs, watcherPaths, analyzer
                 onClick={() => toggleExpand(idx)}
                 className={`flex items-center gap-2 px-4 py-1 cursor-pointer hover:bg-gray-800/50 ${getRowClass(entry)}`}
               >
-                <span className="text-gray-600 w-16 shrink-0">{entry.time?.split(" ")[0]?.slice(0, 8) || ""}</span>
+                <span className="text-gray-600 w-20 shrink-0">{entry.time?.match(/(\d{2}:\d{2}:\d{2})/)?.[1] || ""}</span>
                 <span className={`w-10 shrink-0 font-bold ${METHOD_COLORS[entry.method] || "text-gray-400"}`}>
                   {entry.method}
                 </span>

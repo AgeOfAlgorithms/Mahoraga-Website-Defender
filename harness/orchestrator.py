@@ -119,12 +119,18 @@ class Orchestrator:
         # 1. Scanner: reads logs, scores sessions, redirects to shadow
         # 2. Shadow analyzer: LLM reads shadow logs every 15s, detects exploits
         # 3. Fixer pipeline: consumes detected exploits, patches code
-        await asyncio.gather(
+        results = await asyncio.gather(
             self._scan_loop(poll_interval),
             self._process_loop(),
             self.shadow_analyzer.run(),
             self._fixer_loop(),
+            return_exceptions=True,
         )
+        # Log any task failures
+        task_names = ["scan_loop", "process_loop", "shadow_analyzer", "fixer_loop"]
+        for name, result in zip(task_names, results):
+            if isinstance(result, Exception):
+                logger.error("Task %s crashed: %s", name, result)
 
     async def _scan_loop(self, interval: float) -> None:
         """Continuously scan logs for new events."""
