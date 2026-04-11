@@ -233,17 +233,6 @@ class Orchestrator:
             logger.debug("Skipping duplicate queued vuln: %s", vuln_key[:50])
             return
 
-        # Skip vulns in non-patchable services (Java identity, Go community)
-        request_line = attack.get("request", "")
-        vuln_lower = vuln_key.lower() + " " + request_line.lower()
-        if any(kw in vuln_lower for kw in [
-            "/auth/login", "/auth/signup", "/auth/v2/check-otp",
-            "credential_stuffing", "brute force login",
-            "/identity/", "crapi-identity",
-        ]):
-            logger.info("Skipping unpatchable vuln (identity/Java): %s", exploit_type)
-            return
-
         # Assign event_id and emit audit NOW so kanban shows "Analyzing"
         # while it waits in the queue for the fixer to pick it up
         event_id = f"shadow_{uuid.uuid4().hex[:8]}"

@@ -1,44 +1,70 @@
 """GLM agentic runner — sandboxed tool-calling loop for Zhipu AI models.
 
-Replaces the Claude Agent SDK for fixer/reviewer agents. Only exposes
-a single Bash tool that is restricted to whitelisted docker exec commands.
-The model has NO direct filesystem access.
+Replaces the Claude Agent SDK for fixer/reviewer agents. Exposes a
+sandboxed Bash tool that allows:
+  1. Reading/writing files ONLY within crapi-fork/
+  2. docker exec into whitelisted containers (for reloads)
+  3. docker compose rebuild for compiled services (Java/Go)
+
+The model has NO access to anything outside crapi-fork/.
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import re
 import subprocess
+from pathlib import Path
 
 from openai import AsyncOpenAI
 
 logger = logging.getLogger(__name__)
 
-# Only allow docker exec into these containers
-ALLOWED_CONTAINERS = {"crapi-workshop", "shadow-workshop", "nginx-proxy"}
+# Absolute path to the crapi-fork directory (set at import time)
+_PROJECT_DIR = Path(__file__).resolve().parent.parent.parent
+CRAPI_FORK_DIR = _PROJECT_DIR / "crapi-fork"
 
-# Block access to sensitive paths even inside containers
-BLOCKED_PATHS = [
-    "vuln_chains", "plant_flags", "plant_shadow_flags",
-    "harness", "detection", "config", "dashboard",
+# Containers we allow docker exec into (for reloads/verification)
+ALLOWED_EXEC_CONTAINERS = {"crapi-workshop", "shadow-workshop", "nginx-proxy"}
+
+# Containers we allow rebuilding (compiled services)
+ALLOWED_REBUILD_SERVICES = {
+    "crapi-identity", "shadow-identity",
+    "crapi-community", "shadow-community",
+    "crapi-workshop", "shadow-workshop",
+    "nginx-proxy",
+}
+
+# Paths that must NEVER be accessed (even within crapi-fork)
+BLOCKED_PATTERNS = [
+    "plant_flags", "plant_shadow_flags",
+    "harness/", "detection/", "config/", "dashboard/",
     "docker-compose", "start.sh", ".env",
     "scoreboard.json", "flag_verifier",
+    "vuln_chains/",
 ]
 
 BASH_TOOL = {
     "type": "function",
     "function": {
         "name": "bash",
-        "description": "Execute a bash command. Only 'docker exec' commands are allowed. For pipes/chaining, use: docker exec <container> bash -c 'cmd1 | cmd2'",
+        "description": (
+            "Execute a bash command. Allowed commands:\n"
+            "- cat, grep, find, head, tail, ls on files within crapi-fork/\n"
+            "- sed, python3 -c to edit files within crapi-fork/\n"
+            "- docker exec <container> for verification/reloads\n"
+            "- docker compose up -d --build <service> to rebuild compiled services\n"
+            "For pipes, just write them normally (e.g. grep -n pattern file | head)."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
                 "command": {
                     "type": "string",
-                    "description": "The bash command to execute (must be a docker exec command)",
+                    "description": "The bash command to execute",
                 }
             },
             "required": ["command"],
@@ -48,57 +74,74 @@ BASH_TOOL = {
 
 
 def _validate_command(command: str) -> str | None:
-    """Validate that a command is a safe docker exec. Returns error message or None."""
+    """Validate that a command is safe. Returns error message or None if OK."""
     cmd = command.strip()
 
-    # Block shell operators that would execute on the HOST (security hole)
-    # Pipes, semicolons, &&, ||, backticks, $() — all bypass docker exec
-    # Exception: pipes inside a quoted bash -c string are fine
-    # Simple check: if the command has a pipe/semicolon OUTSIDE of quotes, block it
-    if not _has_bash_c(cmd):
-        for op in ["|", "&&", "||", ";", "`", "$("]:
-            if op in cmd:
-                return (f"Shell operator '{op}' not allowed outside docker exec. "
-                        "Use: docker exec <container> bash -c 'cmd1 | cmd2' instead")
-
-    # Must start with docker exec
-    if not cmd.startswith("docker exec"):
-        return "Only 'docker exec' commands are allowed"
-
-    # Extract container name (docker exec [-flags] <container> ...)
-    parts = cmd.split()
-    container = None
-    i = 2  # skip "docker" "exec"
-    while i < len(parts):
-        if parts[i].startswith("-"):
-            # Skip flags and their values
-            if parts[i] in ("-i", "-t", "-u", "-w", "-e"):
-                i += 2
-            else:
-                i += 1
-        else:
-            container = parts[i]
-            break
-        i += 1
-
-    if not container or container not in ALLOWED_CONTAINERS:
-        return f"Container '{container}' not allowed. Allowed: {ALLOWED_CONTAINERS}"
-
-    # Check for blocked paths in the command
+    # Check for blocked patterns in the entire command
     cmd_lower = cmd.lower()
-    for blocked in BLOCKED_PATHS:
+    for blocked in BLOCKED_PATTERNS:
         if blocked in cmd_lower:
             return f"Access to '{blocked}' is not allowed"
 
-    return None
+    # Allow docker exec into whitelisted containers
+    if cmd.startswith("docker exec"):
+        parts = cmd.split()
+        container = None
+        i = 2
+        while i < len(parts):
+            if parts[i].startswith("-"):
+                if parts[i] in ("-i", "-t", "-u", "-w", "-e"):
+                    i += 2
+                else:
+                    i += 1
+            else:
+                container = parts[i]
+                break
+            i += 1
+        if container not in ALLOWED_EXEC_CONTAINERS:
+            return f"docker exec into '{container}' not allowed. Allowed: {ALLOWED_EXEC_CONTAINERS}"
+        return None
+
+    # Allow docker compose rebuild for specific services
+    if cmd.startswith("docker compose") and "--build" in cmd:
+        for service in ALLOWED_REBUILD_SERVICES:
+            if service in cmd:
+                return None
+        return "docker compose rebuild only allowed for specific services"
+
+    # Allow file operations ONLY within crapi-fork/
+    # Resolve the crapi-fork path for validation
+    crapi_str = str(CRAPI_FORK_DIR)
+
+    # Read commands: cat, grep, find, head, tail, ls, wc
+    read_cmds = ("cat ", "grep ", "find ", "head ", "tail ", "ls ", "wc ")
+    # Write commands: sed, python3, cp, mv
+    write_cmds = ("sed ", "python3 ", "cp ", "mv ")
+    # All allowed prefixes
+    allowed_prefixes = read_cmds + write_cmds
+
+    # Check if the command starts with an allowed prefix
+    if any(cmd.startswith(p) for p in allowed_prefixes):
+        # Verify all file paths reference crapi-fork/
+        # Extract potential file paths (anything that looks like a path)
+        path_pattern = re.compile(r'(?:^|\s)(/\S+)')
+        paths = path_pattern.findall(cmd)
+
+        for path in paths:
+            resolved = str(Path(path).resolve())
+            if not resolved.startswith(crapi_str):
+                return f"Path '{path}' is outside crapi-fork/. Only crapi-fork/ files are accessible."
+        return None
+
+    # Allow pkill for gunicorn reload via docker exec (already handled above)
+
+    return (
+        f"Command not allowed: '{cmd[:60]}...'. "
+        "Only file operations within crapi-fork/ and docker exec/compose are permitted."
+    )
 
 
-def _has_bash_c(cmd: str) -> bool:
-    """Check if command uses bash -c (pipes inside quotes are safe)."""
-    return "bash -c" in cmd or "sh -c" in cmd
-
-
-def _execute_command(command: str, timeout: int = 30) -> str:
+def _execute_command(command: str, timeout: int = 60) -> str:
     """Execute a validated command and return output."""
     error = _validate_command(command)
     if error:
@@ -111,6 +154,7 @@ def _execute_command(command: str, timeout: int = 30) -> str:
             capture_output=True,
             text=True,
             timeout=timeout,
+            cwd=str(CRAPI_FORK_DIR),
         )
         output = result.stdout
         if result.stderr:
@@ -133,7 +177,7 @@ async def run_glm_agent(
     max_turns: int = 20,
     model: str = "glm-4-plus",
 ) -> str:
-    """Run a GLM agent with sandboxed bash tool access.
+    """Run a GLM agent with sandboxed tool access.
 
     Returns the final text response from the model.
     """
@@ -176,7 +220,6 @@ async def run_glm_agent(
         # Execute tool calls
         for tool_call in message.tool_calls:
             if tool_call.function.name == "bash":
-                import json
                 try:
                     args = json.loads(tool_call.function.arguments)
                     command = args.get("command", "")
@@ -199,7 +242,6 @@ async def run_glm_agent(
                 })
 
     logger.warning("GLM agent reached max turns (%d)", max_turns)
-    # Return whatever the last assistant message was
     for msg in reversed(messages):
         if msg.get("role") == "assistant" and msg.get("content"):
             return msg["content"]

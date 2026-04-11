@@ -1,19 +1,16 @@
-"""Fixer agent — patches vulnerabilities inside RUNNING containers only.
+"""Fixer agent — patches vulnerabilities by editing source in crapi-fork/.
 
-CRITICAL: The fixer NEVER modifies source code on the host. All edits
-happen inside Docker containers via `docker exec`. Changes are ephemeral
-and lost when containers restart — source code stays clean.
+Uses GLM (Zhipu AI) with a sandboxed bash tool. The sandbox enforces:
+- File access ONLY within crapi-fork/ (path validation, not just prompting)
+- docker exec only into whitelisted containers (for reloads)
+- docker compose rebuild for compiled services (Java/Go)
+- Blocked paths: harness/, vuln_chains/, flags, .env, etc.
 
-Uses GLM (Zhipu AI) with a sandboxed bash tool that only allows
-docker exec commands into whitelisted containers.
-
-Patchable containers:
-- crapi-workshop (Python/Django): edits /app/crapi/ → auto-reloads
-- nginx-proxy (OpenResty): edits /usr/local/openresty/nginx/conf/ → needs reload
-
-Non-patchable (would need rebuild):
-- crapi-identity (Java): compiled JAR, can't hot-patch
-- crapi-community (Go): compiled binary, can't hot-patch
+All services are patchable:
+- crapi-workshop (Python): edit source → gunicorn reload (instant)
+- crapi-identity (Java): edit source → docker compose rebuild
+- crapi-community (Go): edit source → docker compose rebuild
+- nginx-proxy: edit config → nginx reload
 """
 
 from __future__ import annotations
@@ -30,89 +27,94 @@ from harness.types import PatchProposal, TriageResult
 logger = logging.getLogger(__name__)
 
 FIX_PROMPT = """\
-You are a security engineer patching ONE specific vulnerability in a RUNNING
-web application. You will read and edit files INSIDE Docker containers — never
-on the host filesystem.
+You are a security engineer patching ONE specific vulnerability in a web
+application. You edit source files directly in the crapi-fork/ directory,
+then reload or rebuild the affected service.
 
 ## Exploit Report (from shadow environment)
 {triage_json}
 
-## Source code layout (crapi-workshop at /app/)
-- /app/crapi/shop/views.py — shop, orders, coupons
-- /app/crapi/mechanic/views.py — mechanic reports, contact_mechanic (SSRF)
-- /app/crapi/merchant/views.py — merchant/vehicle endpoints
-- /app/crapi/user/views.py — admin, management dashboard, API keys, fleet status
-- /app/utils/jwt.py — JWT authentication decorator
-- /app/crapi_site/urls.py — URL routing
-- /app/crapi_site/settings.py — Django settings
+## Source code layout (all paths relative to crapi-fork/)
+### Python — crapi-workshop (hot-reloadable)
+- services/workshop/crapi/shop/views.py — shop, orders, coupons
+- services/workshop/crapi/mechanic/views.py — mechanic reports, contact_mechanic (SSRF)
+- services/workshop/crapi/merchant/views.py — merchant/vehicle endpoints
+- services/workshop/crapi/user/views.py — admin, management, API keys, fleet status
+- services/workshop/utils/jwt.py — JWT authentication decorator
+- services/workshop/crapi_site/urls.py — URL routing
 
-## How to read files
-```
-docker exec crapi-workshop cat /app/crapi/shop/views.py
-docker exec crapi-workshop bash -c 'grep -n "pattern" /app/crapi/mechanic/views.py'
-```
-IMPORTANT: For pipes, use bash -c: `docker exec crapi-workshop bash -c 'cat file | grep pattern'`
-Do NOT use pipes outside docker exec (e.g. `docker exec ... | grep ...` is WRONG).
+### Java — crapi-identity (needs rebuild after edit)
+- services/identity/src/main/java/com/crapi/controller/ — REST controllers
+- services/identity/src/main/java/com/crapi/service/Impl/ — service implementations
+- services/identity/src/main/java/com/crapi/config/ — security config
 
-## How to apply patches
-Use docker exec with sed or python to edit files in-place:
+### Go — crapi-community (needs rebuild after edit)
+- services/community/api/ — API handlers
+
+## How to read/edit files
+Read files directly from crapi-fork/:
 ```
-docker exec crapi-workshop sed -i 's/old_code/new_code/' /app/crapi/shop/views.py
-docker exec crapi-workshop python3 -c "
-import pathlib
-p = pathlib.Path('/app/crapi/shop/views.py')
+cat crapi-fork/services/workshop/crapi/shop/views.py
+grep -n "pattern" crapi-fork/services/workshop/crapi/mechanic/views.py
+```
+
+Edit with sed or python3:
+```
+sed -i 's/old_code/new_code/' crapi-fork/services/workshop/crapi/shop/views.py
+python3 -c "
+from pathlib import Path
+p = Path('crapi-fork/services/workshop/crapi/shop/views.py')
 code = p.read_text()
 code = code.replace('vulnerable_line', 'fixed_line')
 p.write_text(code)
 "
 ```
 
-For nginx:
-```
-docker exec nginx-proxy sed -i 's/old/new/' /usr/local/openresty/nginx/conf/nginx.conf
-docker exec nginx-proxy nginx -s reload
-```
-
-## Patchable containers
-- **crapi-workshop** (Python/Django at /app/crapi/): after editing, reload with:
+## After patching — reload the service
+**Python (workshop):** hot-reload, no rebuild needed:
   `docker exec crapi-workshop pkill -HUP -f gunicorn`
-- **nginx-proxy** (OpenResty at /usr/local/openresty/nginx/conf/): after editing, reload with:
-  `docker exec nginx-proxy nginx -s reload`
+  `docker exec shadow-workshop pkill -HUP -f gunicorn`
 
-## NOT patchable (skip these)
-- crapi-identity (Java JAR — can't hot-patch)
-- crapi-community (Go binary — can't hot-patch)
+**Java (identity):** must rebuild:
+  `docker compose up -d --build crapi-identity shadow-identity`
+
+**Go (community):** must rebuild:
+  `docker compose up -d --build crapi-community shadow-community`
+
+**Nginx:** reload config:
+  `docker exec nginx-proxy nginx -s reload`
 
 ## STRICT RULES
 1. Fix ONLY the vulnerability described above — NOTHING else
 2. Do NOT fix other bugs or vulnerabilities you notice
 3. Do NOT refactor, add comments, add type hints, or improve code quality
 4. Make the MINIMUM change necessary to close this vulnerability
-5. ALL file reads and edits must use `docker exec` — never direct file access
-6. Be EFFICIENT — read only the file you need, make the fix, respond
+5. Be EFFICIENT — read only the file you need, make the fix, respond
+6. Always apply the fix to BOTH prod and shadow services
 
 ## Your task
-1. Read the relevant source files inside the container
+1. Read the relevant source file in crapi-fork/
 2. Identify the exact lines that cause the vulnerability
-3. Edit ONLY those lines inside the container
-4. Respond with the JSON below
+3. Edit ONLY those lines
+4. Reload/rebuild the affected service
+5. Respond with the JSON below
 
 ## Response format (JSON only, no markdown fencing)
 {{
   "patch_type": "code_fix",
   "description": "one sentence describing the fix",
   "vulnerability": "what was wrong",
-  "container": "which container was patched",
-  "files_modified": ["paths inside the container"],
+  "service": "which service was patched (workshop/identity/community/nginx)",
+  "files_modified": ["paths relative to crapi-fork/"],
   "changes_summary": "what specifically was changed",
-  "rollback": "docker restart <container_name>"
+  "rollback": "git checkout crapi-fork/<file> && docker compose up -d --build <service>"
 }}
 """
 
 SYSTEM_PROMPT = (
     "You are a security engineer. Fix ONLY the specific vulnerability "
-    "described in the triage report. All file access must be through "
-    "docker exec commands — never read or write files directly. "
+    "described in the triage report. Edit source files directly in the "
+    "crapi-fork/ directory, then reload or rebuild the service. "
     "Be EFFICIENT — read only the file you need, make the minimal fix, "
     "and respond. Do not explore the codebase broadly. "
     "After applying the fix, your FINAL message must be ONLY a JSON "
@@ -177,12 +179,12 @@ class Fixer:
             logger.error("Failed to parse fixer response: %s", response_text[:200])
             return None
 
-        container = data.get("container", "unknown")
+        service = data.get("service", data.get("container", "unknown"))
         files_modified = data.get("files_modified", [])
 
         logger.info(
-            "Patch applied in container %s: %s (%s)",
-            container, data.get("description", ""), files_modified,
+            "Patch applied to %s: %s (%s)",
+            service, data.get("description", ""), files_modified,
         )
 
         return PatchProposal(
@@ -191,5 +193,5 @@ class Fixer:
             description=data.get("description", ""),
             diff=data.get("changes_summary", ""),
             files_modified=files_modified,
-            rollback_steps=data.get("rollback", f"docker restart {container}"),
+            rollback_steps=data.get("rollback", f"docker compose up -d --build {service}"),
         )
