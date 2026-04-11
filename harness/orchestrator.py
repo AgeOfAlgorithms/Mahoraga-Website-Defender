@@ -120,15 +120,13 @@ class Orchestrator:
             s: [] for s in Severity
         }
 
-    async def run(self, poll_interval: float = 2.0) -> None:
-        """Main loop — five parallel agent loops connected by queues.
+        # Dynamic agent scaling — tracks running asyncio tasks by name
+        self._agent_tasks: dict[str, asyncio.Task] = {}
+        self._agent_counts_file = project_dir / "config" / "agent_counts.json"
+        self._current_counts = {"fixer": 2, "reviewer": 1}
 
-        Scanner → scores sessions, redirects to shadow
-        Shadow Analyzer → detects exploits → exploit_queue
-        Fixer → patches containers → review_queue
-        Reviewer → checks patch scope + functionality → marks deployed
-        Process → handles batched events
-        """
+    async def run(self, poll_interval: float = 2.0) -> None:
+        """Main loop — parallel agent loops connected by queues."""
         logger.info("Reactive Defender started. Watching %s", self.watcher.log_path)
         logger.info("Budget: $%.2f/day, $%.2f/incident",
                      self.cost_governor.daily_budget,
@@ -137,21 +135,92 @@ class Orchestrator:
                      self.shadow_analyzer.interval,
                      self.shadow_analyzer.shadow_log_path)
 
-        loops = {
-            "scanner": self._scan_loop(poll_interval),
-            "processor": self._process_loop(),
-            "shadow_analyzer": self.shadow_analyzer.run(),
-            "fixer_1": self._agent_loop("fixer_1", self._exploit_queue, self._run_fixer),
-            "fixer_2": self._agent_loop("fixer_2", self._exploit_queue, self._run_fixer),
-            "reviewer": self._agent_loop("reviewer", self._review_queue, self._run_reviewer),
+        # Load saved agent counts if they exist
+        if self._agent_counts_file.exists():
+            try:
+                saved = json.loads(self._agent_counts_file.read_text())
+                self._current_counts.update(saved)
+            except (json.JSONDecodeError, OSError):
+                pass
+
+        # Start core loops (non-scalable singletons)
+        core_tasks = {
+            "scanner": asyncio.create_task(self._scan_loop(poll_interval)),
+            "processor": asyncio.create_task(self._process_loop()),
+            "shadow_analyzer": asyncio.create_task(self.shadow_analyzer.run()),
         }
 
-        results = await asyncio.gather(
-            *loops.values(), return_exceptions=True,
-        )
-        for name, result in zip(loops.keys(), results):
+        # Start scalable agents at configured counts
+        self._scale_agents("fixer", self._current_counts.get("fixer", 2))
+        self._scale_agents("reviewer", self._current_counts.get("reviewer", 1))
+
+        # Watch for scaling changes
+        scale_watcher = asyncio.create_task(self._watch_agent_counts())
+
+        all_tasks = list(core_tasks.values()) + [scale_watcher]
+        results = await asyncio.gather(*all_tasks, return_exceptions=True)
+        for task, result in zip(all_tasks, results):
             if isinstance(result, Exception):
-                logger.error("Task %s crashed: %s", name, result)
+                logger.error("Task crashed: %s", result)
+
+    def _scale_agents(self, agent_type: str, desired: int) -> None:
+        """Scale agent instances up or down. Max 3 per type."""
+        desired = max(1, min(3, desired))
+        current = sum(1 for name in self._agent_tasks
+                      if name.startswith(f"{agent_type}_"))
+
+        if desired == current:
+            return
+
+        if agent_type == "fixer":
+            queue = self._exploit_queue
+            make_handler = lambda name: lambda item: self._run_fixer(item, name)
+        elif agent_type == "reviewer":
+            queue = self._review_queue
+            make_handler = lambda name: lambda item: self._run_reviewer(item)
+        else:
+            return
+
+        if desired > current:
+            # Scale up
+            for i in range(current + 1, desired + 1):
+                name = f"{agent_type}_{i}"
+                if name not in self._agent_tasks:
+                    handler = make_handler(name)
+                    task = asyncio.create_task(self._agent_loop(name, queue, handler))
+                    self._agent_tasks[name] = task
+                    logger.info("Spawned agent: %s", name)
+        else:
+            # Scale down — cancel highest-numbered instances
+            to_remove = []
+            for name in sorted(self._agent_tasks.keys(), reverse=True):
+                if name.startswith(f"{agent_type}_") and len(to_remove) < current - desired:
+                    to_remove.append(name)
+            for name in to_remove:
+                self._agent_tasks[name].cancel()
+                del self._agent_tasks[name]
+                logger.info("Stopped agent: %s", name)
+
+        self._current_counts[agent_type] = desired
+
+    async def _watch_agent_counts(self) -> None:
+        """Poll config/agent_counts.json for scaling changes."""
+        while True:
+            await asyncio.sleep(3)
+            if not self._agent_counts_file.exists():
+                continue
+            try:
+                desired = json.loads(self._agent_counts_file.read_text())
+                for agent_type in ("fixer", "reviewer"):
+                    count = desired.get(agent_type)
+                    if count is not None and count != self._current_counts.get(agent_type):
+                        self._scale_agents(agent_type, count)
+            except (json.JSONDecodeError, OSError):
+                pass
+
+    def get_agent_counts(self) -> dict:
+        """Return current agent instance counts."""
+        return dict(self._current_counts)
 
     async def _agent_loop(self, name: str, queue: asyncio.Queue, handler) -> None:
         """Generic resilient agent loop — pulls from queue, calls handler,
@@ -266,7 +335,7 @@ class Orchestrator:
 
     # ── Fixer agent ──────────────────────────────────────────────
 
-    async def _run_fixer(self, attack: dict) -> None:
+    async def _run_fixer(self, attack: dict, agent_name: str = "fixer_1") -> None:
         """Fixer handler — generates a patch inside the running container."""
         from harness.types import TriageResult
 
@@ -279,8 +348,8 @@ class Orchestrator:
         event_id = attack.get("_event_id", f"shadow_{__import__('uuid').uuid4().hex[:8]}")
 
         logger.warning(
-            "FIXER: type=%s severity=%s vuln=%s",
-            exploit_type, severity, vuln[:80],
+            "%s: type=%s severity=%s vuln=%s",
+            agent_name, exploit_type, severity, vuln[:80],
         )
 
         triage = TriageResult(
@@ -294,11 +363,11 @@ class Orchestrator:
             approval_policy=ApprovalPolicy.AUTO_APPLY_NOTIFY,
         )
 
-        self._audit("fixer_started", event_id, "fixer",
+        self._audit("fixer_started", event_id, agent_name,
                      f"Fixing {exploit_type}: {vuln[:80]}")
         patch = await self.fixer.generate_patch(triage)
         if patch is None:
-            self._audit("error", event_id, "fixer",
+            self._audit("error", event_id, agent_name,
                          f"Patch generation failed for: {exploit_type}")
             self._pending_vulns.discard(vuln[:80])
             return
@@ -310,7 +379,7 @@ class Orchestrator:
         # Save patch to disk so dashboard can display it
         self._save_patch(patch, triage)
 
-        self._audit("patch_proposed", event_id, "fixer",
+        self._audit("patch_proposed", event_id, agent_name,
                      f"exploit={exploit_type} files={patch.files_modified}")
 
         # Hand off to reviewer

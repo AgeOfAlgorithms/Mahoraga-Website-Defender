@@ -328,6 +328,7 @@ services:
       - ./audit:/data/audit:ro
       - ./patches:/data/patches:ro
       - ./detection:/data/detection:ro
+      - ./config:/data/config
     environment:
       - DATA_ROOT=/data
       - CONTROL_PLANE_URL=http://control-plane:9090

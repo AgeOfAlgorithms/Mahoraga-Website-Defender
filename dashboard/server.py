@@ -25,6 +25,7 @@ AUDIT_DIR = DATA_ROOT / "audit"
 PATCHES_DIR = DATA_ROOT / "patches"
 DETECTION_DIR = DATA_ROOT / "detection"
 CONTROL_PLANE_URL = os.environ.get("CONTROL_PLANE_URL", "http://control-plane:9090")
+CONFIG_DIR = DATA_ROOT / "config"
 
 app = FastAPI(title="Reactive Defender Dashboard")
 
@@ -225,6 +226,40 @@ async def reset_scoreboard():
             return resp.json()
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+
+@app.get("/api/agents/counts")
+async def get_agent_counts():
+    """Return current agent instance counts."""
+    counts_file = CONFIG_DIR / "agent_counts.json"
+    defaults = {"fixer": 2, "reviewer": 1}
+    if counts_file.exists():
+        try:
+            saved = json.loads(counts_file.read_text())
+            defaults.update(saved)
+        except (json.JSONDecodeError, OSError):
+            pass
+    return defaults
+
+
+@app.post("/api/agents/scale")
+async def scale_agents(body: dict):
+    """Set desired agent instance counts. Orchestrator polls this file."""
+    counts_file = CONFIG_DIR / "agent_counts.json"
+    # Read existing
+    current = {"fixer": 2, "reviewer": 1}
+    if counts_file.exists():
+        try:
+            current.update(json.loads(counts_file.read_text()))
+        except (json.JSONDecodeError, OSError):
+            pass
+    # Update with request
+    for agent_type in ("fixer", "reviewer"):
+        if agent_type in body:
+            current[agent_type] = max(1, min(3, int(body[agent_type])))
+    counts_file.write_text(json.dumps(current, indent=2))
+    logger.info("Agent counts updated: %s", current)
+    return current
 
 
 @app.get("/api/logs/recent")
