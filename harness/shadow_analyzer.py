@@ -51,8 +51,6 @@ purchased, quantity manipulation
 belonging to other users
 6. **SSRF success**: Response contains internal service data (hostnames, ports, \
 internal API responses)
-7. **Flag capture**: Response contains a string matching XVEH{{...}} pattern — this \
-means the attacker completed an exploit chain
 
 ## Response format (JSON only, no markdown fencing)
 {{
