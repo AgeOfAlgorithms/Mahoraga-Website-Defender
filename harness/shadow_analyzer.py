@@ -212,15 +212,25 @@ class ShadowAnalyzer:
         )
 
         response_text = ""
-        try:
-            async for message in query(prompt=prompt, options=options):
-                if isinstance(message, AssistantMessage):
-                    for block in message.content:
-                        if isinstance(block, TextBlock):
-                            response_text += block.text
-        except Exception as e:
-            logger.error("Shadow analysis LLM call failed: %s", e)
-            return True  # had data, LLM call just failed
+        max_retries = 3
+        for attempt in range(max_retries):
+            response_text = ""
+            try:
+                async for message in query(prompt=prompt, options=options):
+                    if isinstance(message, AssistantMessage):
+                        for block in message.content:
+                            if isinstance(block, TextBlock):
+                                response_text += block.text
+                break  # success
+            except Exception as e:
+                logger.error(
+                    "Shadow analysis LLM call failed (attempt %d/%d): %s",
+                    attempt + 1, max_retries, e,
+                )
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(5 * (attempt + 1))
+                else:
+                    return True  # had data, LLM call just failed
 
         self.cost_governor.record_spend("shadow_analysis", HAIKU_COST_PER_CALL)
 

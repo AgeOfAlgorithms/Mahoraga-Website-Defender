@@ -4,6 +4,9 @@ CRITICAL: The fixer NEVER modifies source code on the host. All edits
 happen inside Docker containers via `docker exec`. Changes are ephemeral
 and lost when containers restart — source code stays clean.
 
+Uses GLM (Zhipu AI) with a sandboxed bash tool that only allows
+docker exec commands into whitelisted containers.
+
 Patchable containers:
 - crapi-workshop (Python/Django): edits /app/crapi/ → auto-reloads
 - nginx-proxy (OpenResty): edits /usr/local/openresty/nginx/conf/ → needs reload
@@ -15,13 +18,12 @@ Non-patchable (would need rebuild):
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
-import subprocess
 from dataclasses import asdict
 
-from claude_agent_sdk import query, ClaudeAgentOptions, AssistantMessage, TextBlock
-
+from harness.agents.glm_runner import run_glm_agent
 from harness.cost_governor import CostGovernor
 from harness.types import PatchProposal, TriageResult
 
@@ -36,7 +38,7 @@ on the host filesystem.
 {triage_json}
 
 ## How to read files inside containers
-Use the Bash tool to run docker exec commands:
+Use the bash tool to run docker exec commands:
 ```
 docker exec crapi-workshop cat /app/crapi/shop/views.py
 docker exec crapi-workshop grep -n "vulnerable_pattern" /app/crapi/mechanic/views.py
@@ -72,25 +74,19 @@ docker exec nginx-proxy nginx -s reload
 - crapi-identity (Java JAR — can't hot-patch)
 - crapi-community (Go binary — can't hot-patch)
 
-## OFF-LIMITS — do NOT access
-- Any file on the host filesystem
-- vuln_chains/, plant_flags.py, harness/, detection/, config/, dashboard/
-- Flag values, challenge descriptions, or test data
-- Other containers' data (postgresdb, mongodb, redis)
-
 ## STRICT RULES
 1. Fix ONLY the vulnerability described above — NOTHING else
 2. Do NOT fix other bugs or vulnerabilities you notice
 3. Do NOT refactor, add comments, add type hints, or improve code quality
 4. Make the MINIMUM change necessary to close this vulnerability
 5. ALL file reads and edits must use `docker exec` — never direct file access
-6. Do NOT search for or read flag values
+6. Be EFFICIENT — read only the file you need, make the fix, respond
 
 ## Your task
 1. Read the relevant source files inside the container
 2. Identify the exact lines that cause the vulnerability
 3. Edit ONLY those lines inside the container
-4. Report what you changed
+4. Respond with the JSON below
 
 ## Response format (JSON only, no markdown fencing)
 {{
@@ -104,7 +100,18 @@ docker exec nginx-proxy nginx -s reload
 }}
 """
 
-CODE_FIX_COST_ESTIMATE = 0.15
+SYSTEM_PROMPT = (
+    "You are a security engineer. Fix ONLY the specific vulnerability "
+    "described in the triage report. All file access must be through "
+    "docker exec commands — never read or write files directly. "
+    "Be EFFICIENT — read only the file you need, make the minimal fix, "
+    "and respond. Do not explore the codebase broadly. "
+    "After applying the fix, your FINAL message must be ONLY a JSON "
+    "object with the response format specified. No explanation, no "
+    "markdown, no code fences — just the raw JSON object."
+)
+
+CODE_FIX_COST_ESTIMATE = 0.05  # GLM is much cheaper than Claude
 
 
 class Fixer:
@@ -122,31 +129,27 @@ class Fixer:
         triage_json = json.dumps(asdict(triage), indent=2, default=str)
         prompt = FIX_PROMPT.format(triage_json=triage_json)
 
-        options = ClaudeAgentOptions(
-            model="claude-sonnet-4-6",
-            system_prompt=(
-                "You are a security engineer. Fix ONLY the specific vulnerability "
-                "described in the triage report. All file access must be through "
-                "docker exec commands — never read or write files directly. "
-                "After applying the fix, your FINAL message must be ONLY a JSON "
-                "object with the response format specified. No explanation, no "
-                "markdown, no code fences — just the raw JSON object."
-            ),
-            max_turns=15,
-            allowed_tools=["Bash"],
-            permission_mode="bypassPermissions",
-        )
-
+        max_retries = 3
         response_text = ""
-        try:
-            async for message in query(prompt=prompt, options=options):
-                if isinstance(message, AssistantMessage):
-                    for block in message.content:
-                        if isinstance(block, TextBlock):
-                            response_text += block.text
-        except Exception as e:
-            logger.error("Fixer LLM call failed for %s: %s", triage.event_id, e)
-            return None
+        for attempt in range(max_retries):
+            try:
+                response_text = await run_glm_agent(
+                    prompt=prompt,
+                    system_prompt=SYSTEM_PROMPT,
+                    max_turns=20,
+                )
+                break  # success
+            except Exception as e:
+                logger.error(
+                    "Fixer GLM call failed for %s (attempt %d/%d): %s",
+                    triage.event_id, attempt + 1, max_retries, e,
+                )
+                if attempt < max_retries - 1:
+                    wait = 5 * (attempt + 1)
+                    logger.info("Retrying in %ds...", wait)
+                    await asyncio.sleep(wait)
+                else:
+                    return None
 
         self.cost_governor.record_spend(triage.event_id, CODE_FIX_COST_ESTIMATE)
 

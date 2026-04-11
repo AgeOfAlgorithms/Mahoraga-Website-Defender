@@ -16,14 +16,14 @@ const AGENTS = [
   {
     id: "fixer",
     label: "Fixer",
-    description: "LLM generates patches in Docker",
-    systemPrompt: "You are a security engineer patching ONE specific vulnerability in a RUNNING web application. All file reads and edits must use docker exec — never direct file access. Fix ONLY the vulnerability described. Do NOT fix other bugs. Make the MINIMUM change necessary. After patching, reload gunicorn with: docker exec crapi-workshop pkill -HUP -f gunicorn",
+    description: "GLM patches vulnerabilities in Docker",
+    systemPrompt: "You are a security engineer patching ONE specific vulnerability in a RUNNING web application. All file reads and edits must use docker exec — never direct file access. Fix ONLY the vulnerability described. Do NOT fix other bugs. Make the MINIMUM change necessary. Sandboxed: only docker exec into crapi-workshop, shadow-workshop, nginx-proxy allowed.",
   },
   {
     id: "reviewer",
     label: "Reviewer",
-    description: "LLM reviews patches",
-    systemPrompt: "You are a strict security reviewer. Check: 1) Does the patch fix the vulnerability? 2) Does it introduce new security issues? 3) Could it break existing functionality? 4) SCOPE CHECK: REJECT if it also fixes other bugs, adds comments, refactors code, or makes changes not directly needed. Use docker exec to verify patches inside containers.",
+    description: "GLM reviews patches",
+    systemPrompt: "You are a strict security reviewer. Check: 1) Does the patch fix the vulnerability? 2) Does it introduce new security issues? 3) Could it break existing functionality? 4) SCOPE CHECK: REJECT if it also fixes other bugs, adds comments, refactors code, or makes changes not directly needed. Sandboxed: only docker exec verification allowed.",
   },
 ];
 
@@ -103,7 +103,7 @@ function AgentPanel({ agent, entries, status }) {
   const statusTextColor = status === "active" ? "text-green-400" : status === "error" ? "text-red-400" : "text-gray-500";
 
   return (
-    <div className="flex flex-col bg-gray-800/80 border border-gray-700 rounded-lg overflow-hidden min-h-0">
+    <div className="flex flex-col h-full bg-gray-800/80 border border-gray-700 rounded-lg overflow-hidden">
       {/* Panel header */}
       <div className="flex items-center gap-2 px-3 py-2 bg-gray-900/50 border-b border-gray-800 shrink-0">
         <StatusDot status={status} />
@@ -167,29 +167,32 @@ function AgentPanel({ agent, entries, status }) {
 }
 
 export default function AgentsView({ audit }) {
-  const [visible, setVisible] = useState(() => new Set(AGENTS.map(a => a.id)));
+  const [visible, setVisible] = useState(() => {
+    try {
+      const saved = localStorage.getItem("agents_visible");
+      return saved ? new Set(JSON.parse(saved)) : new Set(AGENTS.map(a => a.id));
+    } catch { return new Set(AGENTS.map(a => a.id)); }
+  });
+  const [columns, setColumns] = useState(() => {
+    return Number(localStorage.getItem("agents_columns")) || 2;
+  });
   const [now, setNow] = useState(Date.now());
 
-  // Tick every 5s to refresh status determination
   useEffect(() => {
     const interval = setInterval(() => setNow(Date.now()), 5000);
     return () => clearInterval(interval);
   }, []);
 
-  // Group audit entries by agent
   const entriesByAgent = useMemo(() => {
     const map = {};
     for (const a of AGENTS) map[a.id] = [];
     for (const entry of audit) {
       const agentId = entry.agent;
-      if (map[agentId]) {
-        map[agentId].push(entry);
-      }
+      if (map[agentId]) map[agentId].push(entry);
     }
     return map;
   }, [audit]);
 
-  // Compute status per agent
   const statusByAgent = useMemo(() => {
     const map = {};
     for (const a of AGENTS) {
@@ -206,27 +209,12 @@ export default function AgentsView({ audit }) {
       } else {
         next.add(id);
       }
+      localStorage.setItem("agents_visible", JSON.stringify([...next]));
       return next;
     });
   }, []);
 
-  const toggleAll = useCallback(() => {
-    setVisible(prev => {
-      if (prev.size === AGENTS.length) return new Set([AGENTS[0].id]);
-      return new Set(AGENTS.map(a => a.id));
-    });
-  }, []);
-
   const visibleAgents = AGENTS.filter(a => visible.has(a.id));
-
-  // Responsive grid columns based on visible count
-  const gridCols = {
-    1: "grid-cols-1",
-    2: "grid-cols-2",
-    3: "grid-cols-3",
-    4: "grid-cols-2 lg:grid-cols-4",
-    5: "grid-cols-2 lg:grid-cols-5",
-  }[visibleAgents.length] || "grid-cols-3";
 
   return (
     <div className="h-full flex flex-col">
@@ -252,12 +240,20 @@ export default function AgentsView({ audit }) {
           </label>
         ))}
 
-        <button
-          onClick={toggleAll}
-          className="ml-auto px-2 py-0.5 text-[10px] text-gray-400 hover:text-white bg-gray-800 hover:bg-gray-700 rounded border border-gray-700 transition-colors uppercase tracking-wider"
-        >
-          {visible.size === AGENTS.length ? "Solo first" : "Show all"}
-        </button>
+        {/* Column count */}
+        <div className="ml-auto flex items-center gap-1.5">
+          <span className="text-[10px] text-gray-500">Columns</span>
+          <select
+            value={columns}
+            onChange={e => { const v = Number(e.target.value); setColumns(v); localStorage.setItem("agents_columns", v); }}
+            className="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-xs text-gray-300 focus:outline-none focus:border-blue-500"
+          >
+            <option value={1}>1</option>
+            <option value={2}>2</option>
+            <option value={3}>3</option>
+            <option value={4}>4</option>
+          </select>
+        </div>
 
         {/* Summary counts */}
         <div className="flex gap-3 text-xs text-gray-500">
@@ -276,16 +272,28 @@ export default function AgentsView({ audit }) {
         </div>
       </div>
 
-      {/* Agent panels grid */}
-      <div className={`flex-1 grid ${gridCols} gap-3 p-3 overflow-hidden min-h-0`}>
-        {visibleAgents.map(agent => (
-          <AgentPanel
-            key={agent.id}
-            agent={agent}
-            entries={entriesByAgent[agent.id]}
-            status={statusByAgent[agent.id]}
-          />
-        ))}
+      {/* Agent panels — horizontal scroll, peek next card to hint scrollability */}
+      <div className="flex-1 flex gap-3 p-3 overflow-x-auto min-h-0">
+        {visibleAgents.map(agent => {
+          // Show `columns` cards + 1/5 of the next card visible as a peek hint
+          // Total visible width = columns + 0.2 cards worth
+          // Each card width = container / (columns + 0.2) minus gap
+          const peekFraction = columns + 0.2;
+          const gapPx = 12; // gap-3 = 12px
+          return (
+            <div
+              key={agent.id}
+              className="shrink-0 h-full"
+              style={{ width: `calc(${100 / peekFraction}% - ${((columns - 1) * gapPx) / columns}px)` }}
+            >
+              <AgentPanel
+                agent={agent}
+                entries={entriesByAgent[agent.id]}
+                status={statusByAgent[agent.id]}
+              />
+            </div>
+          );
+        })}
       </div>
     </div>
   );

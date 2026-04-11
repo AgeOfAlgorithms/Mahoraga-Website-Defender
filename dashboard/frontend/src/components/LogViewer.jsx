@@ -28,6 +28,14 @@ const METHOD_COLORS = {
   PATCH: "text-purple-400",
 };
 
+const HTTP_STATUS_NAMES = {
+  200: "OK", 201: "Created", 204: "No Content",
+  301: "Moved", 302: "Found", 304: "Not Modified",
+  400: "Bad Request", 401: "Unauthorized", 403: "Forbidden",
+  404: "Not Found", 405: "Method Not Allowed", 429: "Too Many Requests",
+  500: "Server Error", 502: "Bad Gateway", 503: "Service Unavailable",
+};
+
 export default function LogViewer({ prodLogs, shadowLogs, watcherPaths, analyzerTypes, events, audit }) {
   const [env, setEnv] = useState("all");
   const [expanded, setExpanded] = useState(new Set());
@@ -180,71 +188,142 @@ export default function LogViewer({ prodLogs, shadowLogs, watcherPaths, analyzer
       </div>
 
       {/* Log entries */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto font-mono text-xs">
-        {filteredLogs.length === 0 ? (
-          <div className="flex items-center justify-center h-full text-gray-600">
-            {logs.length === 0 ? "Waiting for log entries..." : "No matching entries"}
-          </div>
-        ) : (
-          filteredLogs.map((entry, idx) => (
-            <div key={idx} className={`${entry._new ? "log-entry-new" : ""}`}>
-              <div
-                onClick={() => toggleExpand(idx)}
-                className={`flex items-center gap-2 px-4 py-1 cursor-pointer hover:bg-gray-800/50 ${getRowClass(entry)}`}
-              >
-                <span className="text-gray-600 w-20 shrink-0">{entry.time?.match(/(\d{2}:\d{2}:\d{2})/)?.[1] || ""}</span>
-                <span className={`w-10 shrink-0 font-bold ${METHOD_COLORS[entry.method] || "text-gray-400"}`}>
-                  {entry.method}
-                </span>
-                <span className={`w-8 shrink-0 ${STATUS_COLORS[entry.status] || "text-gray-400"}`}>
-                  {entry.status}
-                </span>
-                <span className="flex-1 truncate text-gray-300">{entry.path}</span>
-                <span className="text-gray-600 w-32 shrink-0 text-right">{entry.ip}</span>
-                {entry.env && (
-                  <span className={`text-[10px] px-1.5 rounded ${
-                    entry.env === "shadow" ? "bg-purple-900 text-purple-300" : "bg-gray-800 text-gray-500"
-                  }`}>
-                    {entry.env}
-                  </span>
-                )}
-                <span className="text-gray-700 w-4">{expanded.has(idx) ? "\u25BC" : "\u25B6"}</span>
-              </div>
+      {env === "all" ? (
+        /* Split screen for ALL view */
+        <div className="flex-1 flex min-h-0">
+          <LogPanel
+            title="PROD"
+            titleColor="text-blue-400"
+            logs={filteredLogs.filter(l => (l.env || "prod") === "prod")}
+            expanded={expanded}
+            toggleExpand={toggleExpand}
+            getRowClass={getRowClass}
+            eventsByPath={eventsByPath}
+            autoScroll={autoScroll}
+            side="left"
+          />
+          <div className="w-px bg-gray-700 shrink-0" />
+          <LogPanel
+            title="SHADOW"
+            titleColor="text-purple-400"
+            logs={filteredLogs.filter(l => l.env === "shadow")}
+            expanded={expanded}
+            toggleExpand={toggleExpand}
+            getRowClass={getRowClass}
+            eventsByPath={eventsByPath}
+            autoScroll={autoScroll}
+            side="right"
+          />
+        </div>
+      ) : (
+        /* Single pane for PROD or SHADOW */
+        <div ref={scrollRef} className="flex-1 overflow-y-auto font-mono text-xs">
+          <LogList
+            logs={filteredLogs}
+            expanded={expanded}
+            toggleExpand={toggleExpand}
+            getRowClass={getRowClass}
+            eventsByPath={eventsByPath}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
 
-              {expanded.has(idx) && (
-                <div className="px-8 py-2 bg-gray-900/80 border-b border-gray-800 space-y-2">
-                  {entry.user_agent && (
-                    <Detail label="User-Agent" value={entry.user_agent} />
-                  )}
-                  {entry.auth && (
-                    <Detail label="Auth" value={entry.auth} />
-                  )}
-                  {entry.response_time != null && (
-                    <Detail label="Response Time" value={`${entry.response_time}s`} />
-                  )}
-                  {(entry.body || entry.req_body) && (
-                    <Detail label="Request Body" value={entry.body || entry.req_body} json />
-                  )}
-                  {entry.resp_body && (
-                    <Detail label="Response Body" value={entry.resp_body} json />
-                  )}
-                  {entry.referer && (
-                    <Detail label="Referer" value={entry.referer} />
-                  )}
-                  {/* Show matched event if any */}
-                  {eventsByPath[entry.path] && (
-                    <div className="mt-2 p-2 rounded bg-amber-950/40 border border-amber-800">
-                      <span className="text-amber-400 font-bold text-[10px] uppercase">Watcher Alert: </span>
-                      <span className="text-amber-200">
-                        {eventsByPath[entry.path].event_type} [{eventsByPath[entry.path].severity}]
-                      </span>
-                    </div>
-                  )}
-                </div>
-              )}
+function LogRow({ entry, idx, expanded, toggleExpand, getRowClass, eventsByPath }) {
+  return (
+    <div className={`${entry._new ? "log-entry-new" : ""}`}>
+      <div
+        onClick={() => toggleExpand(idx)}
+        className={`flex items-center gap-2 px-4 py-1 cursor-pointer hover:bg-gray-800/50 ${getRowClass(entry)}`}
+      >
+        <span className="text-gray-600 w-20 shrink-0">{entry.time?.match(/(\d{2}:\d{2}:\d{2})/)?.[1] || ""}</span>
+        <span className={`w-10 shrink-0 font-bold ${METHOD_COLORS[entry.method] || "text-gray-400"}`}>
+          {entry.method}
+        </span>
+        <span className={`w-8 shrink-0 ${STATUS_COLORS[entry.status] || "text-gray-400"}`}>
+          {entry.status}
+        </span>
+        <span className="flex-1 truncate text-gray-300">{entry.path}</span>
+        <span className="text-gray-600 w-32 shrink-0 text-right">{entry.ip}</span>
+        <span className="text-gray-700 w-4">{expanded.has(idx) ? "\u25BC" : "\u25B6"}</span>
+      </div>
+
+      {expanded.has(idx) && (
+        <div className="px-8 py-2 bg-gray-900/80 border-b border-gray-800 space-y-2">
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px]">
+            <KeyVal k="Method" v={entry.method} color={METHOD_COLORS[entry.method]} />
+            <KeyVal k="Status" v={`${entry.status} ${HTTP_STATUS_NAMES[entry.status] || ""}`} color={STATUS_COLORS[entry.status]} />
+            <KeyVal k="URL" v={entry.path} />
+            <KeyVal k="IP" v={entry.ip} />
+            <KeyVal k="Env" v={entry.env} color={entry.env === "shadow" ? "text-purple-400" : "text-gray-400"} />
+            {entry.response_time != null && <KeyVal k="Time" v={`${entry.response_time}s`} />}
+            {entry.bytes != null && <KeyVal k="Size" v={`${entry.bytes}B`} />}
+          </div>
+          {entry.user_agent && <Detail label="User-Agent" value={entry.user_agent} />}
+          {entry.auth && <Detail label="Auth" value={entry.auth} />}
+          {(entry.body || entry.req_body) && <Detail label="Request Body" value={entry.body || entry.req_body} json />}
+          {entry.resp_body && <Detail label="Response Body" value={entry.resp_body} json />}
+          {entry.referer && <Detail label="Referer" value={entry.referer} />}
+          {eventsByPath[entry.path] && (
+            <div className="mt-2 p-2 rounded bg-amber-950/40 border border-amber-800">
+              <span className="text-amber-400 font-bold text-[10px] uppercase">Watcher Alert: </span>
+              <span className="text-amber-200">
+                {eventsByPath[entry.path].event_type} [{eventsByPath[entry.path].severity}]
+              </span>
             </div>
-          ))
-        )}
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LogList({ logs, expanded, toggleExpand, getRowClass, eventsByPath }) {
+  if (logs.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-full text-gray-600">
+        Waiting for log entries...
+      </div>
+    );
+  }
+  return logs.map((entry, idx) => (
+    <LogRow
+      key={idx}
+      entry={entry}
+      idx={`${entry.env || "prod"}_${idx}`}
+      expanded={expanded}
+      toggleExpand={toggleExpand}
+      getRowClass={getRowClass}
+      eventsByPath={eventsByPath}
+    />
+  ));
+}
+
+function LogPanel({ title, titleColor, logs, expanded, toggleExpand, getRowClass, eventsByPath, autoScroll, side }) {
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (autoScroll && ref.current) {
+      ref.current.scrollTop = ref.current.scrollHeight;
+    }
+  }, [logs.length, autoScroll]);
+
+  return (
+    <div className="flex-1 flex flex-col min-h-0 min-w-0">
+      <div className={`px-3 py-1 text-[10px] font-bold uppercase tracking-wider ${titleColor} bg-gray-900/60 border-b border-gray-800 shrink-0 flex items-center justify-between`}>
+        <span>{title}</span>
+        <span className="text-gray-500 font-mono font-normal">{logs.length}</span>
+      </div>
+      <div ref={ref} className="flex-1 overflow-y-auto font-mono text-xs">
+        <LogList
+          logs={logs}
+          expanded={expanded}
+          toggleExpand={toggleExpand}
+          getRowClass={getRowClass}
+          eventsByPath={eventsByPath}
+        />
       </div>
     </div>
   );
@@ -267,5 +346,14 @@ function Detail({ label, value, json }) {
         {display}
       </pre>
     </div>
+  );
+}
+
+function KeyVal({ k, v, color }) {
+  return (
+    <span>
+      <span className="text-gray-500">{k}: </span>
+      <span className={color || "text-gray-300"}>{v}</span>
+    </span>
   );
 }

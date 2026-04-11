@@ -2,16 +2,19 @@
 
 Separate from the Fixer so it can't be lenient about its own work.
 This is the generator-evaluator separation from the Anthropic harness article.
+
+Uses GLM (Zhipu AI) with a sandboxed bash tool that only allows
+docker exec commands into whitelisted containers.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from dataclasses import asdict
 
-from claude_agent_sdk import query, ClaudeAgentOptions, AssistantMessage, TextBlock
-
+from harness.agents.glm_runner import run_glm_agent
 from harness.cost_governor import CostGovernor
 from harness.types import PatchProposal, ReviewResult, TriageResult
 
@@ -47,10 +50,6 @@ Use `docker exec` to read the patched file inside the container and verify \
 the change looks correct. Check that the fix is syntactically valid and \
 wouldn't cause import errors or runtime crashes.
 
-## OFF-LIMITS — do NOT read these files/directories
-vuln_chains/, plant_flags.py, plant_shadow_flags.py, harness/, detection/,
-config/, dashboard/, docker-compose.yml, start.sh, .env files.
-
 ## Response format (JSON only, no markdown fencing)
 {{
   "approved": true/false,
@@ -64,7 +63,14 @@ Be strict but practical. REJECT if the patch could break normal functionality. \
 APPROVE if the fix is correct, scoped, and safe for users.
 """
 
-REVIEW_COST_ESTIMATE = 0.05
+SYSTEM_PROMPT = (
+    "You are a strict security reviewer. Use docker exec to verify patches "
+    "inside containers if needed. Your FINAL message must be ONLY a JSON "
+    "object with the response format specified. No explanation, no markdown, "
+    "no code fences — just the raw JSON object."
+)
+
+REVIEW_COST_ESTIMATE = 0.02  # GLM is much cheaper than Claude
 
 
 class Reviewer:
@@ -88,25 +94,27 @@ class Reviewer:
         patch_json = json.dumps(asdict(patch), indent=2, default=str)
         prompt = REVIEW_PROMPT.format(triage_json=triage_json, patch_json=patch_json)
 
-        options = ClaudeAgentOptions(
-            model="claude-sonnet-4-6",
-            system_prompt="You are a strict security reviewer. Respond with JSON only. "
-                          "Use docker exec to verify patches inside containers if needed.",
-            max_turns=3,
-            allowed_tools=["Bash"],
-            permission_mode="bypassPermissions",
-        )
-
+        max_retries = 3
         response_text = ""
-        try:
-            async for message in query(prompt=prompt, options=options):
-                if isinstance(message, AssistantMessage):
-                    for block in message.content:
-                        if isinstance(block, TextBlock):
-                            response_text += block.text
-        except Exception as e:
-            logger.error("Reviewer LLM call failed for %s: %s", patch.patch_id, e)
-            return None
+        for attempt in range(max_retries):
+            try:
+                response_text = await run_glm_agent(
+                    prompt=prompt,
+                    system_prompt=SYSTEM_PROMPT,
+                    max_turns=10,
+                )
+                break  # success
+            except Exception as e:
+                logger.error(
+                    "Reviewer GLM call failed for %s (attempt %d/%d): %s",
+                    patch.patch_id, attempt + 1, max_retries, e,
+                )
+                if attempt < max_retries - 1:
+                    wait = 5 * (attempt + 1)
+                    logger.info("Retrying in %ds...", wait)
+                    await asyncio.sleep(wait)
+                else:
+                    return None
 
         self.cost_governor.record_spend(triage.event_id, REVIEW_COST_ESTIMATE)
 
@@ -114,6 +122,10 @@ class Reviewer:
             text = response_text.strip()
             if text.startswith("```"):
                 text = text.split("\n", 1)[1].rsplit("```", 1)[0]
+            start = text.find("{")
+            end = text.rfind("}") + 1
+            if start >= 0 and end > start:
+                text = text[start:end]
             data = json.loads(text)
         except json.JSONDecodeError:
             logger.error("Failed to parse reviewer response: %s", response_text[:200])

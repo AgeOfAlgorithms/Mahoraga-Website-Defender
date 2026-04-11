@@ -32,7 +32,6 @@ from harness.shadow_analyzer import ShadowAnalyzer
 from harness.types import (
     ApprovalPolicy,
     AuditEntry,
-    EventStatus,
     SecurityEvent,
     Severity,
 )
@@ -161,7 +160,13 @@ class Orchestrator:
                     self._audit("detection", event.event_id, "watcher",
                                 f"Detected {event.event_type} [{event.severity.value}]")
 
-                    # Critical events skip the batch queue
+                    # Score session IMMEDIATELY — never delay redirect decisions
+                    try:
+                        await self._take_immediate_action(event)
+                    except Exception as e:
+                        logger.error("Scoring failed for %s: %s", event.event_id, e)
+
+                    # Critical events skip the batch queue for further processing
                     if event.severity == Severity.CRITICAL:
                         await self._event_queue.put(event)
                     else:
@@ -201,7 +206,7 @@ class Orchestrator:
                 self._audit("error", event.event_id, "orchestrator", str(e))
 
     async def _handle_event(self, event: SecurityEvent) -> None:
-        """Event handling: score session → redirect to shadow if threshold met.
+        """Event handling — scoring already happened in _scan_loop.
 
         The Fixer pipeline is triggered separately by the Shadow Analyzer
         when it observes successful exploits in the shadow environment.
@@ -209,18 +214,14 @@ class Orchestrator:
         logger.info("Processing event %s: %s [%s]",
                      event.event_id, event.event_type, event.severity.value)
 
-        # Score and redirect
-        try:
-            await self._take_immediate_action(event)
-        except Exception as e:
-            logger.error("Scoring failed for %s: %s", event.event_id, e)
-
         self._audit("event_recorded", event.event_id, "orchestrator",
                      f"{event.event_type} [{event.severity.value}]")
 
     async def _enqueue_exploit(self, attack: dict) -> None:
         """Called by ShadowAnalyzer — drops the exploit into the fixer queue.
         Deduplicates by vulnerability type — no point fixing the same thing twice."""
+        import uuid
+
         vuln_key = attack.get("vulnerability", "")[:80]
         exploit_type = attack.get("type", "unknown")
 
@@ -232,18 +233,28 @@ class Orchestrator:
             logger.debug("Skipping duplicate queued vuln: %s", vuln_key[:50])
             return
 
+        # Assign event_id and emit audit NOW so kanban shows "Analyzing"
+        # while it waits in the queue for the fixer to pick it up
+        event_id = f"shadow_{uuid.uuid4().hex[:8]}"
+        attack["_event_id"] = event_id
+        request_line = attack.get("request", "")
+        severity = attack.get("severity", "high")
+
+        self._audit("shadow_exploit_detected", event_id, "shadow_analyzer",
+                     f"type={exploit_type} severity={severity} "
+                     f"vuln={vuln_key[:100]} request={request_line[:100]}")
+
         self._pending_vulns.add(vuln_key)
         await self._exploit_queue.put(attack)
         logger.info(
             "Exploit queued for Fixer: type=%s severity=%s",
-            exploit_type, attack.get("severity"),
+            exploit_type, severity,
         )
 
     # ── Fixer agent ──────────────────────────────────────────────
 
     async def _run_fixer(self, attack: dict) -> None:
         """Fixer handler — generates a patch inside the running container."""
-        import uuid
         from harness.types import TriageResult
 
         exploit_type = attack.get("type", "unknown")
@@ -251,19 +262,13 @@ class Orchestrator:
         vuln = attack.get("vulnerability", "")
         fix_rec = attack.get("fix_recommendation", "")
         evidence = attack.get("evidence", "")
-        request_line = attack.get("request", "")
 
-        event_id = f"shadow_{uuid.uuid4().hex[:8]}"
+        event_id = attack.get("_event_id", f"shadow_{__import__('uuid').uuid4().hex[:8]}")
 
         logger.warning(
             "FIXER: type=%s severity=%s vuln=%s",
             exploit_type, severity, vuln[:80],
         )
-        self._audit("shadow_exploit_detected", event_id, "shadow_analyzer",
-                     f"type={exploit_type} severity={severity} "
-                     f"vuln={vuln[:100]} request={request_line[:100]}")
-        self._audit("fixer_started", event_id, "fixer",
-                     f"Fixing {exploit_type}: {vuln[:80]}")
 
         triage = TriageResult(
             event_id=event_id,
@@ -276,6 +281,8 @@ class Orchestrator:
             approval_policy=ApprovalPolicy.AUTO_APPLY_NOTIFY,
         )
 
+        self._audit("fixer_started", event_id, "fixer",
+                     f"Fixing {exploit_type}: {vuln[:80]}")
         patch = await self.fixer.generate_patch(triage)
         if patch is None:
             self._audit("error", event_id, "fixer",
