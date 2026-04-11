@@ -5,7 +5,6 @@ const COLUMNS = [
   { id: "analyzing", label: "Analyzing", color: "border-blue-500", bg: "bg-blue-900/20" },
   { id: "fixing", label: "Fixing", color: "border-amber-500", bg: "bg-amber-900/20" },
   { id: "fix_reviewing", label: "Reviewing", color: "border-purple-500", bg: "bg-purple-900/20" },
-  { id: "fix_testing", label: "Testing", color: "border-cyan-500", bg: "bg-cyan-900/20" },
   { id: "resolved", label: "Deployed", color: "border-green-500", bg: "bg-green-900/20" },
 ];
 

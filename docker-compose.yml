@@ -8,8 +8,6 @@ services:
       options:
         max-size: "50m"
         max-file: "3"
-    volumes:
-      - ./crapi-fork/services/identity/src:/app/src:ro
     environment:
       - LOG_LEVEL=INFO
       - DB_NAME=crapi

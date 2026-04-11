@@ -25,12 +25,6 @@ const AGENTS = [
     description: "LLM reviews patches",
     systemPrompt: "You are a strict security reviewer. Check: 1) Does the patch fix the vulnerability? 2) Does it introduce new security issues? 3) Could it break existing functionality? 4) SCOPE CHECK: REJECT if it also fixes other bugs, adds comments, refactors code, or makes changes not directly needed. Use docker exec to verify patches inside containers.",
   },
-  {
-    id: "tester",
-    label: "Tester",
-    description: "LLM tests patches",
-    systemPrompt: "You are a QA tester. Navigate to the application and verify: 1) Homepage loads, 2) Vehicle dashboard works, 3) Community forum works, 4) Login page accessible, 5) Shop browsable. For each flow, note if it works, is broken, or is slower. Determine if breakage is caused by the patch.",
-  },
 ];
 
 const LEVEL_COLORS = {

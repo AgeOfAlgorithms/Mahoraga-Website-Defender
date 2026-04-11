@@ -24,7 +24,7 @@ import yaml
 from harness.agents.analyzer import Analyzer
 from harness.agents.fixer import Fixer
 from harness.agents.reviewer import Reviewer
-from harness.agents.tester import Tester
+
 from harness.agents.watcher import Watcher
 from harness.control_plane_client import ControlPlaneClient
 from harness.cost_governor import CostGovernor
@@ -86,12 +86,10 @@ class Orchestrator:
         self.analyzer = Analyzer(self.cost_governor, str(project_dir))
         self.fixer = Fixer(self.cost_governor)
         self.reviewer = Reviewer(self.cost_governor, str(project_dir))
-        self.tester = Tester(self.cost_governor, app_url, str(project_dir))
 
         # Inter-agent queues
         self._exploit_queue: asyncio.Queue[dict] = asyncio.Queue()
         self._review_queue: asyncio.Queue[tuple] = asyncio.Queue()  # (triage, patch)
-        self._test_queue: asyncio.Queue[tuple] = asyncio.Queue()    # (triage, patch)
 
         # Dedup tracking
         self._pending_vulns: set[str] = set()   # vuln descriptions currently queued
@@ -112,13 +110,12 @@ class Orchestrator:
         }
 
     async def run(self, poll_interval: float = 2.0) -> None:
-        """Main loop — six parallel agent loops connected by queues.
+        """Main loop — five parallel agent loops connected by queues.
 
         Scanner → scores sessions, redirects to shadow
         Shadow Analyzer → detects exploits → exploit_queue
         Fixer → patches containers → review_queue
-        Reviewer → checks patch scope → test_queue
-        Tester → validates no regressions → marks deployed
+        Reviewer → checks patch scope + functionality → marks deployed
         Process → handles batched events
         """
         logger.info("Reactive Defender started. Watching %s", self.watcher.log_path)
@@ -135,7 +132,6 @@ class Orchestrator:
             "shadow_analyzer": self.shadow_analyzer.run(),
             "fixer": self._agent_loop("fixer", self._exploit_queue, self._run_fixer),
             "reviewer": self._agent_loop("reviewer", self._review_queue, self._run_reviewer),
-            "tester": self._agent_loop("tester", self._test_queue, self._run_tester),
         }
 
         results = await asyncio.gather(
@@ -303,7 +299,7 @@ class Orchestrator:
     # ── Reviewer agent ───────────────────────────────────────────
 
     async def _run_reviewer(self, item: tuple) -> None:
-        """Reviewer handler — checks that the patch is scoped correctly."""
+        """Reviewer handler — checks patch scope and functionality, then deploys."""
         triage, patch = item
         event_id = triage.event_id
 
@@ -314,28 +310,8 @@ class Orchestrator:
             logger.warning("Patch %s rejected: %s", patch.patch_id, review.issues)
             return
 
-        self._audit("review_passed", event_id, "reviewer",
-                     f"Patch approved: {patch.description}")
-
-        # Hand off to tester
-        await self._test_queue.put((triage, patch))
-
-    # ── Tester agent ─────────────────────────────────────────────
-
-    async def _run_tester(self, item: tuple) -> None:
-        """Tester handler — validates no regressions, marks as deployed."""
-        triage, patch = item
-        event_id = triage.event_id
-
-        test_result = await self.tester.test_patch(patch)
-        if test_result and not test_result.passed and not test_result.is_minor:
-            self._audit("test_failed", event_id, "tester",
-                         f"Regression: {test_result.complaint}")
-            logger.warning("Patch %s failed testing: %s", patch.patch_id, test_result.complaint)
-            return
-
-        self._audit("deployed", event_id, "orchestrator",
-                     f"Fixed: {triage.classification} — {patch.description}")
+        self._audit("deployed", event_id, "reviewer",
+                     f"Approved and deployed: {triage.classification} — {patch.description}")
         logger.info(
             "EXPLOIT FIXED: type=%s patch=%s — %s",
             triage.classification, patch.patch_id, patch.description,
