@@ -4,12 +4,17 @@ set -e
 echo "=== Mahoraga Defender Agent ==="
 echo ""
 
+# Reset crapi-fork to unpatched original
+echo "[1/5] Resetting crapi-fork to unpatched original..."
+rsync -a --delete crapi-original/ crapi-fork/
+echo "  crapi-fork reset from crapi-original"
+
 # Start all services
-echo "[1/4] Starting services..."
+echo "[2/5] Starting services..."
 docker compose up -d --build
 
 # Wait for crAPI to be healthy
-echo "[2/4] Waiting for crAPI to be ready..."
+echo "[3/5] Waiting for crAPI to be ready..."
 until docker compose ps crapi-workshop | grep -q "healthy"; do
     sleep 2
 done
@@ -18,10 +23,10 @@ until docker compose ps shadow-workshop | grep -q "healthy"; do
 done
 
 # Plant flags (idempotent)
-echo "[3/4] Planting prod flags..."
+echo "[4/5] Planting prod flags..."
 python3 plant_flags.py
 
-echo "[4/4] Planting shadow decoy flags..."
+echo "[5/5] Planting shadow decoy flags..."
 python3 plant_shadow_flags.py
 
 echo ""

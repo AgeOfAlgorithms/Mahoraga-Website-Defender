@@ -99,8 +99,6 @@ services:
       options:
         max-size: "50m"
         max-file: "3"
-    volumes:
-      - ./crapi-fork/services/workshop/crapi:/app/crapi
     environment:
       - LOG_LEVEL=INFO
       - IDENTITY_SERVICE=crapi-identity:8080

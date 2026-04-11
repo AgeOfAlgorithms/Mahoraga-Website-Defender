@@ -1,12 +1,14 @@
 import { useState, useCallback, useEffect } from "react";
 import useWebSocket from "./hooks/useWebSocket";
 import LogViewer from "./components/LogViewer";
+import AgentsView from "./components/AgentsView";
 import KanbanBoard from "./components/KanbanBoard";
 import CodeDiff from "./components/CodeDiff";
 import VulnStatus from "./components/VulnStatus";
 
 const TABS = [
   { id: "logs", label: "Logs" },
+  { id: "agents", label: "Agents" },
   { id: "pipeline", label: "Pipeline" },
   { id: "patches", label: "Patches" },
   { id: "vulns", label: "Vulnerabilities" },
@@ -210,6 +212,9 @@ export default function App() {
             events={events}
             audit={audit}
           />
+        )}
+        {tab === "agents" && (
+          <AgentsView audit={audit} />
         )}
         {tab === "pipeline" && (
           <KanbanBoard events={events} audit={audit} patches={patches} />
