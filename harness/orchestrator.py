@@ -93,6 +93,10 @@ class Orchestrator:
         self._review_queue: asyncio.Queue[tuple] = asyncio.Queue()  # (triage, patch)
         self._test_queue: asyncio.Queue[tuple] = asyncio.Queue()    # (triage, patch)
 
+        # Dedup tracking
+        self._pending_vulns: set[str] = set()   # vuln descriptions currently queued
+        self._fixed_types: set[str] = set()     # exploit types already patched
+
         # Shadow LLM analyzer — generic exploit detection every 15s
         self.shadow_analyzer = ShadowAnalyzer(
             shadow_log_path=project_dir / "logs" / "nginx" / "shadow.log",
@@ -219,11 +223,24 @@ class Orchestrator:
                      f"{event.event_type} [{event.severity.value}]")
 
     async def _enqueue_exploit(self, attack: dict) -> None:
-        """Called by ShadowAnalyzer — drops the exploit into the fixer queue."""
+        """Called by ShadowAnalyzer — drops the exploit into the fixer queue.
+        Deduplicates by vulnerability type — no point fixing the same thing twice."""
+        vuln_key = attack.get("vulnerability", "")[:80]
+        exploit_type = attack.get("type", "unknown")
+
+        # Skip if we already fixed or are fixing this type
+        if exploit_type in self._fixed_types:
+            logger.debug("Skipping already-fixed exploit type: %s", exploit_type)
+            return
+        if vuln_key in self._pending_vulns:
+            logger.debug("Skipping duplicate queued vuln: %s", vuln_key[:50])
+            return
+
+        self._pending_vulns.add(vuln_key)
         await self._exploit_queue.put(attack)
         logger.info(
             "Exploit queued for Fixer: type=%s severity=%s",
-            attack.get("type"), attack.get("severity"),
+            exploit_type, attack.get("severity"),
         )
 
     # ── Fixer agent ──────────────────────────────────────────────
@@ -265,7 +282,12 @@ class Orchestrator:
         if patch is None:
             self._audit("error", event_id, "fixer",
                          f"Patch generation failed for: {exploit_type}")
+            self._pending_vulns.discard(vuln[:80])
             return
+
+        # Mark this exploit type as fixed — don't re-fix
+        self._fixed_types.add(exploit_type)
+        self._pending_vulns.discard(vuln[:80])
 
         # Save patch to disk so dashboard can display it
         self._save_patch(patch, triage)
