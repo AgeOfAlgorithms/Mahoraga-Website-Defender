@@ -185,10 +185,12 @@ async def run_glm_agent(
     if not api_key:
         raise ValueError("GLM_API_KEY not set in environment")
 
-    client = AsyncOpenAI(
+    from openai import AsyncOpenAI as _Client
+    import httpx
+    client = _Client(
         api_key=api_key,
         base_url="https://open.bigmodel.cn/api/paas/v4",
-        timeout=60.0,
+        timeout=httpx.Timeout(60.0, connect=15.0),
         max_retries=3,
     )
 
