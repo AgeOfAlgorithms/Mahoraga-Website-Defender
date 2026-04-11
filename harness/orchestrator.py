@@ -317,12 +317,63 @@ class Orchestrator:
             logger.warning("Patch %s rejected: %s", patch.patch_id, review.issues)
             return
 
+        # Deploy: rebuild/reload affected services
+        await self._deploy_patch(patch, event_id)
+
         self._audit("deployed", event_id, "reviewer",
                      f"Approved and deployed: {triage.classification} — {patch.description}")
         logger.info(
             "EXPLOIT FIXED: type=%s patch=%s — %s",
             triage.classification, patch.patch_id, patch.description,
         )
+
+    async def _deploy_patch(self, patch, event_id: str) -> None:
+        """Rebuild/reload affected services after patch is approved."""
+        import subprocess
+
+        files = patch.files_modified or []
+        services_to_rebuild = set()
+        services_to_reload = set()
+
+        for f in files:
+            f_lower = f.lower()
+            if "workshop" in f_lower:
+                services_to_reload.add(("crapi-workshop", "docker exec crapi-workshop pkill -HUP -f gunicorn"))
+                services_to_reload.add(("shadow-workshop", "docker exec shadow-workshop pkill -HUP -f gunicorn"))
+            elif "identity" in f_lower:
+                services_to_rebuild.add("crapi-identity")
+                services_to_rebuild.add("shadow-identity")
+            elif "community" in f_lower:
+                services_to_rebuild.add("crapi-community")
+                services_to_rebuild.add("shadow-community")
+            elif "nginx" in f_lower:
+                services_to_reload.add(("nginx-proxy", "docker exec nginx-proxy nginx -s reload"))
+
+        # Hot-reload Python/nginx (instant)
+        for name, cmd in services_to_reload:
+            try:
+                subprocess.run(cmd, shell=True, capture_output=True, timeout=10)
+                logger.info("Reloaded %s", name)
+            except Exception as e:
+                logger.error("Failed to reload %s: %s", name, e)
+
+        # Rebuild compiled services (Java/Go)
+        if services_to_rebuild:
+            svc_list = " ".join(services_to_rebuild)
+            cmd = f"docker compose up -d --build {svc_list}"
+            logger.info("Rebuilding services: %s", svc_list)
+            self._audit("rebuilding", event_id, "orchestrator",
+                         f"Rebuilding: {svc_list}")
+            try:
+                subprocess.run(
+                    cmd, shell=True, capture_output=True, timeout=300,
+                    cwd=str(self.project_dir),
+                )
+                logger.info("Rebuild complete: %s", svc_list)
+            except subprocess.TimeoutExpired:
+                logger.error("Rebuild timed out for: %s", svc_list)
+            except Exception as e:
+                logger.error("Rebuild failed for %s: %s", svc_list, e)
 
     def _deploy(self, patch) -> None:
         """Apply a patch — save it and execute via control plane."""
