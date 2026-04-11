@@ -52,6 +52,16 @@ export default function KanbanBoard({ events, audit, patches }) {
       else if (patchProposed) status = "fix_reviewing";
       else if (fixing) status = "fixing";
 
+      // Determine if actively being worked on right now
+      const eventAudit = audit.filter(aa => aa.event_id === a.event_id);
+      const lastAction = eventAudit.length > 0
+        ? eventAudit.reduce((a, b) => (a.timestamp || 0) > (b.timestamp || 0) ? a : b)
+        : null;
+      const isActive = lastAction && (
+        (status === "fixing" && lastAction.action === "fixer_started") ||
+        (status === "fix_reviewing" && lastAction.action === "patch_proposed")
+      );
+
       const synthEvent = {
         event_id: a.event_id,
         event_type: `shadow: ${a.detail?.match(/type=(\S+)/)?.[1] || "unknown"}`,
@@ -61,6 +71,7 @@ export default function KanbanBoard({ events, audit, patches }) {
         status,
         evidence: { detail: a.detail },
         _shadow: true,
+        _active: isActive,
       };
 
       if (grouped[status]) {
@@ -108,7 +119,9 @@ export default function KanbanBoard({ events, audit, patches }) {
                   className={`kanban-card p-2.5 rounded cursor-pointer border ${
                     selected?.event_id === evt.event_id
                       ? "border-blue-500 bg-gray-800"
-                      : "border-gray-700/50 bg-gray-800/80 hover:border-gray-600"
+                      : evt._active
+                        ? "border-amber-500/70 bg-amber-950/30 ring-1 ring-amber-500/30"
+                        : "border-gray-700/50 bg-gray-800/80 hover:border-gray-600"
                   }`}
                 >
                   <div className="flex items-start justify-between gap-1">
@@ -124,8 +137,14 @@ export default function KanbanBoard({ events, audit, patches }) {
                   <div className="mt-1 text-xs text-gray-300 font-medium truncate">
                     {evt.event_type}
                   </div>
-                  {evt._shadow && (
+                  {evt._shadow && !evt._active && (
                     <span className="text-[9px] text-purple-400 mt-0.5 block">via shadow analyzer</span>
+                  )}
+                  {evt._active && (
+                    <span className="text-[9px] text-amber-400 mt-0.5 flex items-center gap-1">
+                      <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                      in progress
+                    </span>
                   )}
                   <div className="text-[10px] text-gray-600 mt-1">
                     {evt.timestamp ? new Date(evt.timestamp * 1000).toLocaleTimeString() : ""}
