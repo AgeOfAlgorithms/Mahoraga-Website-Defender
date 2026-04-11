@@ -2,7 +2,6 @@ import { useMemo, useState } from "react";
 
 const COLUMNS = [
   { id: "new", label: "Detected", color: "border-gray-500", bg: "bg-gray-800/50" },
-  { id: "analyzing", label: "Analyzing", color: "border-blue-500", bg: "bg-blue-900/20" },
   { id: "fixing", label: "Fixing", color: "border-amber-500", bg: "bg-amber-900/20" },
   { id: "fix_reviewing", label: "Reviewing", color: "border-purple-500", bg: "bg-purple-900/20" },
   { id: "resolved", label: "Deployed", color: "border-green-500", bg: "bg-green-900/20" },
@@ -47,11 +46,9 @@ export default function KanbanBoard({ events, audit, patches }) {
       const patchProposed = actions.includes("patch_proposed");
 
       const fixing = actions.includes("fixer_started");
-      let status = "analyzing";
+      let status = "fixing";
       if (deployed) status = "resolved";
-      else if (testFailed) status = "fix_testing";
-      else if (reviewPassed) status = "fix_testing";
-      else if (reviewRejected) status = "analyzing";
+      else if (reviewPassed || reviewRejected) status = "fix_reviewing";
       else if (patchProposed) status = "fix_reviewing";
       else if (fixing) status = "fixing";
 
