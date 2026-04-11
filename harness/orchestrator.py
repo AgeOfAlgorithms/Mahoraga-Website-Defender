@@ -13,6 +13,7 @@ whether request+response pairs indicate a successful attack.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 from dataclasses import asdict
@@ -266,6 +267,9 @@ class Orchestrator:
                          f"Patch generation failed for: {exploit_type}")
             return
 
+        # Save patch to disk so dashboard can display it
+        self._save_patch(patch, triage)
+
         self._audit("patch_proposed", event_id, "fixer",
                      f"exploit={exploit_type} files={patch.files_modified}")
 
@@ -363,6 +367,16 @@ class Orchestrator:
                             f"identifiers={result.get('identifiers', [])}")
         except Exception as e:
             logger.error("Failed to score session for %s: %s", event.event_id, e)
+
+    def _save_patch(self, patch, triage) -> None:
+        """Save patch record to disk for the dashboard."""
+        from dataclasses import asdict
+        patch_data = asdict(patch)
+        patch_data["classification"] = triage.classification
+        patch_data["severity"] = triage.severity.value
+        patch_data["analysis"] = triage.analysis[:300]
+        patch_file = self.patches_dir / f"{patch.patch_id}.json"
+        patch_file.write_text(json.dumps(patch_data, indent=2, default=str))
 
     def _audit(self, action: str, event_id: str, agent: str, detail: str) -> None:
         """Write an immutable audit entry."""
