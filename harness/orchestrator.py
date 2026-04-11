@@ -87,11 +87,12 @@ class Orchestrator:
         self.reviewer = Reviewer(self.cost_governor, str(project_dir))
         self.tester = Tester(self.cost_governor, app_url, str(project_dir))
 
-        # Queue for exploits detected by shadow analyzer
+        # Inter-agent queues
         self._exploit_queue: asyncio.Queue[dict] = asyncio.Queue()
+        self._review_queue: asyncio.Queue[tuple] = asyncio.Queue()  # (triage, patch)
+        self._test_queue: asyncio.Queue[tuple] = asyncio.Queue()    # (triage, patch)
 
         # Shadow LLM analyzer — generic exploit detection every 15s
-        # Drops detected exploits into the queue (non-blocking)
         self.shadow_analyzer = ShadowAnalyzer(
             shadow_log_path=project_dir / "logs" / "nginx" / "shadow.log",
             cost_governor=self.cost_governor,
@@ -106,7 +107,15 @@ class Orchestrator:
         }
 
     async def run(self, poll_interval: float = 2.0) -> None:
-        """Main loop: scan → triage → fix → review → test → deploy."""
+        """Main loop — six parallel agent loops connected by queues.
+
+        Scanner → scores sessions, redirects to shadow
+        Shadow Analyzer → detects exploits → exploit_queue
+        Fixer → patches containers → review_queue
+        Reviewer → checks patch scope → test_queue
+        Tester → validates no regressions → marks deployed
+        Process → handles batched events
+        """
         logger.info("Reactive Defender started. Watching %s", self.watcher.log_path)
         logger.info("Budget: $%.2f/day, $%.2f/incident",
                      self.cost_governor.daily_budget,
@@ -115,22 +124,32 @@ class Orchestrator:
                      self.shadow_analyzer.interval,
                      self.shadow_analyzer.shadow_log_path)
 
-        # Three parallel loops:
-        # 1. Scanner: reads logs, scores sessions, redirects to shadow
-        # 2. Shadow analyzer: LLM reads shadow logs every 15s, detects exploits
-        # 3. Fixer pipeline: consumes detected exploits, patches code
+        loops = {
+            "scanner": self._scan_loop(poll_interval),
+            "processor": self._process_loop(),
+            "shadow_analyzer": self.shadow_analyzer.run(),
+            "fixer": self._agent_loop("fixer", self._exploit_queue, self._run_fixer),
+            "reviewer": self._agent_loop("reviewer", self._review_queue, self._run_reviewer),
+            "tester": self._agent_loop("tester", self._test_queue, self._run_tester),
+        }
+
         results = await asyncio.gather(
-            self._scan_loop(poll_interval),
-            self._process_loop(),
-            self.shadow_analyzer.run(),
-            self._fixer_loop(),
-            return_exceptions=True,
+            *loops.values(), return_exceptions=True,
         )
-        # Log any task failures
-        task_names = ["scan_loop", "process_loop", "shadow_analyzer", "fixer_loop"]
-        for name, result in zip(task_names, results):
+        for name, result in zip(loops.keys(), results):
             if isinstance(result, Exception):
                 logger.error("Task %s crashed: %s", name, result)
+
+    async def _agent_loop(self, name: str, queue: asyncio.Queue, handler) -> None:
+        """Generic resilient agent loop — pulls from queue, calls handler,
+        catches all errors, and keeps going."""
+        logger.info("Agent loop '%s' started", name)
+        while True:
+            item = await queue.get()
+            try:
+                await handler(item)
+            except Exception as e:
+                logger.error("Agent '%s' error (continuing): %s", name, e, exc_info=True)
 
     async def _scan_loop(self, interval: float) -> None:
         """Continuously scan logs for new events."""
@@ -199,28 +218,17 @@ class Orchestrator:
                      f"{event.event_type} [{event.severity.value}]")
 
     async def _enqueue_exploit(self, attack: dict) -> None:
-        """Called by ShadowAnalyzer — just drops the exploit into the queue.
-        Non-blocking so the analyzer can continue its 15s cycle."""
+        """Called by ShadowAnalyzer — drops the exploit into the fixer queue."""
         await self._exploit_queue.put(attack)
         logger.info(
             "Exploit queued for Fixer: type=%s severity=%s",
             attack.get("type"), attack.get("severity"),
         )
 
-    async def _fixer_loop(self) -> None:
-        """Consumes exploits from the queue and runs the Fixer pipeline.
-        Runs in parallel with the scanner and analyzer."""
-        while True:
-            attack = await self._exploit_queue.get()
-            try:
-                await self._handle_shadow_exploit(attack)
-            except Exception as e:
-                logger.error("Fixer pipeline error: %s", e)
+    # ── Fixer agent ──────────────────────────────────────────────
 
-    async def _handle_shadow_exploit(self, attack: dict) -> None:
-        """Runs the Fixer pipeline for a single exploit detected by the
-        ShadowAnalyzer. The LLM determined the attack succeeded based on
-        request+response analysis — no hardcoded rules needed."""
+    async def _run_fixer(self, attack: dict) -> None:
+        """Fixer handler — generates a patch inside the running container."""
         import uuid
         from harness.types import TriageResult
 
@@ -234,14 +242,13 @@ class Orchestrator:
         event_id = f"shadow_{uuid.uuid4().hex[:8]}"
 
         logger.warning(
-            "SHADOW EXPLOIT → FIXER: type=%s severity=%s vuln=%s",
+            "FIXER: type=%s severity=%s vuln=%s",
             exploit_type, severity, vuln[:80],
         )
         self._audit("shadow_exploit_detected", event_id, "shadow_analyzer",
                      f"type={exploit_type} severity={severity} "
                      f"vuln={vuln[:100]} request={request_line[:100]}")
 
-        # Create triage from LLM analysis (no need to re-analyze)
         triage = TriageResult(
             event_id=event_id,
             is_threat=True,
@@ -253,46 +260,57 @@ class Orchestrator:
             approval_policy=ApprovalPolicy.AUTO_APPLY_NOTIFY,
         )
 
-        # Fixer pipeline (scoped to this specific vulnerability)
         patch = await self.fixer.generate_patch(triage)
         if patch is None:
             self._audit("error", event_id, "fixer",
-                         f"Patch generation failed for shadow exploit: {exploit_type}")
+                         f"Patch generation failed for: {exploit_type}")
             return
 
         self._audit("patch_proposed", event_id, "fixer",
-                     f"shadow exploit={exploit_type} files={patch.files_modified}")
+                     f"exploit={exploit_type} files={patch.files_modified}")
 
-        # Review (Reviewer checks scope) — best-effort, don't block on failure
-        try:
-            review = await self.reviewer.review(triage, patch)
-            if review and not review.approved:
-                self._audit("escalated", event_id, "reviewer",
-                             f"Shadow exploit patch rejected: {review.issues}")
-                logger.warning("Shadow exploit patch rejected: %s", review.issues)
-                return
-            if review and review.approved:
-                self._audit("review_passed", event_id, "reviewer",
-                             f"Patch approved for {exploit_type}")
-        except Exception as e:
-            logger.warning("Reviewer failed, proceeding with patch: %s", e)
+        # Hand off to reviewer
+        await self._review_queue.put((triage, patch))
 
-        # Test — best-effort
-        try:
-            test_result = await self.tester.test_patch(patch)
-            if test_result and not test_result.passed and not test_result.is_minor:
-                self._audit("escalated", event_id, "tester",
-                             f"Shadow exploit patch regression: {test_result.complaint}")
-                return
-        except Exception as e:
-            logger.warning("Tester failed, proceeding with patch: %s", e)
+    # ── Reviewer agent ───────────────────────────────────────────
 
-        # Mark as deployed (patch was already applied by fixer inside container)
+    async def _run_reviewer(self, item: tuple) -> None:
+        """Reviewer handler — checks that the patch is scoped correctly."""
+        triage, patch = item
+        event_id = triage.event_id
+
+        review = await self.reviewer.review(triage, patch)
+        if review and not review.approved:
+            self._audit("review_rejected", event_id, "reviewer",
+                         f"Patch rejected: {review.issues}")
+            logger.warning("Patch %s rejected: %s", patch.patch_id, review.issues)
+            return
+
+        self._audit("review_passed", event_id, "reviewer",
+                     f"Patch approved: {patch.description}")
+
+        # Hand off to tester
+        await self._test_queue.put((triage, patch))
+
+    # ── Tester agent ─────────────────────────────────────────────
+
+    async def _run_tester(self, item: tuple) -> None:
+        """Tester handler — validates no regressions, marks as deployed."""
+        triage, patch = item
+        event_id = triage.event_id
+
+        test_result = await self.tester.test_patch(patch)
+        if test_result and not test_result.passed and not test_result.is_minor:
+            self._audit("test_failed", event_id, "tester",
+                         f"Regression: {test_result.complaint}")
+            logger.warning("Patch %s failed testing: %s", patch.patch_id, test_result.complaint)
+            return
+
         self._audit("deployed", event_id, "orchestrator",
-                     f"Fixed shadow exploit: {exploit_type} — {patch.description}")
+                     f"Fixed: {triage.classification} — {patch.description}")
         logger.info(
-            "SHADOW EXPLOIT FIXED: type=%s patch=%s — %s",
-            exploit_type, patch.patch_id, patch.description,
+            "EXPLOIT FIXED: type=%s patch=%s — %s",
+            triage.classification, patch.patch_id, patch.description,
         )
 
     def _deploy(self, patch) -> None:
