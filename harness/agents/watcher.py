@@ -512,15 +512,17 @@ class Watcher:
 
             # 3. Check global rate limiting
             if self.rate_tracker.record(ip):
+                req_count = len(self.rate_tracker._counts.get(ip, []))
+                # Extreme burst = CRITICAL (instant redirect)
+                # Normal rate exceed = MEDIUM
+                sev = Severity.CRITICAL if req_count > 50 else Severity.MEDIUM
                 events.append(SecurityEvent(
                     event_type="global_rate_limit_exceeded",
-                    severity=Severity.MEDIUM,
+                    severity=sev,
                     evidence={
                         "source_ip": ip,
                         "log_line": line[:500],
-                        "requests_in_window": len(
-                            self.rate_tracker._counts.get(ip, [])
-                        ),
+                        "requests_in_window": req_count,
                     },
                     context={
                         "unique_paths": self.session_tracker.get_unique_paths(ip),
