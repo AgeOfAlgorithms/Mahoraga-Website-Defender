@@ -266,6 +266,8 @@ class Orchestrator:
         self._audit("shadow_exploit_detected", event_id, "shadow_analyzer",
                      f"type={exploit_type} severity={severity} "
                      f"vuln={vuln[:100]} request={request_line[:100]}")
+        self._audit("fixer_started", event_id, "fixer",
+                     f"Fixing {exploit_type}: {vuln[:80]}")
 
         triage = TriageResult(
             event_id=event_id,

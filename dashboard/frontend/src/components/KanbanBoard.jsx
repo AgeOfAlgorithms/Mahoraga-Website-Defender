@@ -3,7 +3,7 @@ import { useMemo, useState } from "react";
 const COLUMNS = [
   { id: "new", label: "Detected", color: "border-gray-500", bg: "bg-gray-800/50" },
   { id: "analyzing", label: "Analyzing", color: "border-blue-500", bg: "bg-blue-900/20" },
-  { id: "fix_proposed", label: "Fix Proposed", color: "border-amber-500", bg: "bg-amber-900/20" },
+  { id: "fixing", label: "Fixing", color: "border-amber-500", bg: "bg-amber-900/20" },
   { id: "fix_reviewing", label: "Reviewing", color: "border-purple-500", bg: "bg-purple-900/20" },
   { id: "fix_testing", label: "Testing", color: "border-cyan-500", bg: "bg-cyan-900/20" },
   { id: "resolved", label: "Deployed", color: "border-green-500", bg: "bg-green-900/20" },
@@ -37,16 +37,24 @@ export default function KanbanBoard({ events, audit, patches }) {
     // Also add shadow exploits from audit as synthetic events
     const shadowEvents = audit.filter(a => a.action === "shadow_exploit_detected");
     for (const a of shadowEvents) {
-      // Check if there's a corresponding patch
-      const deployed = audit.some(
-        aa => aa.action === "deployed" && aa.event_id === a.event_id
-      );
-      const reviewing = audit.some(
-        aa => aa.action === "patch_proposed" && aa.event_id === a.event_id
-      );
-      const escalated = audit.some(
-        aa => aa.action === "escalated" && aa.event_id === a.event_id
-      );
+      // Determine pipeline stage from audit trail
+      const actions = audit
+        .filter(aa => aa.event_id === a.event_id)
+        .map(aa => aa.action);
+      const deployed = actions.includes("deployed");
+      const testFailed = actions.includes("test_failed");
+      const reviewPassed = actions.includes("review_passed");
+      const reviewRejected = actions.includes("review_rejected");
+      const patchProposed = actions.includes("patch_proposed");
+
+      const fixing = actions.includes("fixer_started");
+      let status = "analyzing";
+      if (deployed) status = "resolved";
+      else if (testFailed) status = "fix_testing";
+      else if (reviewPassed) status = "fix_testing";
+      else if (reviewRejected) status = "analyzing";
+      else if (patchProposed) status = "fix_reviewing";
+      else if (fixing) status = "fixing";
 
       const synthEvent = {
         event_id: a.event_id,
@@ -54,12 +62,11 @@ export default function KanbanBoard({ events, audit, patches }) {
         severity: a.detail?.match(/severity=(\S+)/)?.[1] || "high",
         timestamp: a.timestamp,
         source: "shadow_analyzer",
-        status: deployed ? "resolved" : escalated ? "escalated" : reviewing ? "fix_reviewing" : "analyzing",
+        status,
         evidence: { detail: a.detail },
         _shadow: true,
       };
 
-      const status = synthEvent.status;
       if (grouped[status]) {
         // Avoid duplicates
         if (!grouped[status].some(e => e.event_id === synthEvent.event_id)) {
