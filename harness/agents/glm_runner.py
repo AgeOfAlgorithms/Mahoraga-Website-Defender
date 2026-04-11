@@ -188,6 +188,8 @@ async def run_glm_agent(
     client = AsyncOpenAI(
         api_key=api_key,
         base_url="https://open.bigmodel.cn/api/paas/v4",
+        timeout=60.0,
+        max_retries=3,
     )
 
     messages = [
