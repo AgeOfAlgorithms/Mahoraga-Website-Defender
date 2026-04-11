@@ -9,6 +9,13 @@ echo "[1/5] Resetting crapi-fork to unpatched original..."
 rsync -a --delete crapi-original/ crapi-fork/
 echo "  crapi-fork reset from crapi-original"
 
+# Clear stale data from previous sessions
+echo "  Clearing logs, events, audit, patches..."
+rm -f events/*.json audit/*.json patches/*.json
+: > logs/nginx/access.log 2>/dev/null || true
+: > logs/nginx/shadow.log 2>/dev/null || true
+: > logs/nginx/error.log 2>/dev/null || true
+
 # Start all services
 echo "[2/5] Starting services..."
 docker compose up -d --build
