@@ -9,11 +9,18 @@ export default function CodeDiff({ patches, audit }) {
       const related = audit.filter(a => a.event_id === p.event_id);
       const deployed = related.find(a => a.action === "deployed");
       const proposed = related.find(a => a.action === "patch_proposed");
-      const escalated = related.find(a => a.action === "escalated");
+      const rejected = related.find(a => a.action === "review_rejected");
+      const fixerStarted = related.find(a => a.action === "fixer_started");
+
+      let status = "unknown";
+      if (deployed) status = "deployed";
+      else if (rejected) status = "rejected";
+      else if (proposed) status = "proposed";
+      else if (fixerStarted) status = "proposed";
 
       return {
         ...p,
-        status: deployed ? "deployed" : escalated ? "rejected" : proposed ? "proposed" : "unknown",
+        status,
         timeline: related.sort((a, b) => a.timestamp - b.timestamp),
       };
     }).reverse(); // Most recent first
