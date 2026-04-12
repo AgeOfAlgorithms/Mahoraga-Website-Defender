@@ -112,12 +112,14 @@ export default function LogViewer({ prodLogs, shadowLogs, watcherPaths, analyzer
     });
 
     // Group consecutive identical requests (same method+path+ip+status)
-    // Assign stable IDs based on content, not position
+    // Assign stable IDs based on content + sequence counter
     const grouped = [];
+    const idCounts = {};
     for (const entry of filtered) {
-      // Generate a stable ID from the entry's content
       if (!entry._id) {
-        entry._id = `${entry.time}|${entry.method}|${entry.path}|${entry.ip}|${entry.status}|${entry.env || "prod"}`;
+        const base = `${entry.time}|${entry.method}|${entry.path}|${entry.ip}|${entry.status}|${entry.env || "prod"}`;
+        idCounts[base] = (idCounts[base] || 0) + 1;
+        entry._id = `${base}#${idCounts[base]}`;
       }
 
       const last = grouped[grouped.length - 1];
