@@ -460,9 +460,29 @@ async def poll_control_plane():
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
     await manager.connect(ws)
+    # Send all existing data so the client doesn't miss anything
+    try:
+        for directory, msg_type in [
+            (EVENTS_DIR, "event"),
+            (AUDIT_DIR, "audit"),
+            (PATCHES_DIR, "patch"),
+        ]:
+            if not directory.exists():
+                continue
+            for f in sorted(directory.glob("*.json")):
+                if f.name == "cost_ledger.json":
+                    continue
+                try:
+                    data = json.loads(f.read_text())
+                    await ws.send_json({"type": msg_type, "data": data})
+                except (json.JSONDecodeError, OSError):
+                    pass
+    except WebSocketDisconnect:
+        manager.disconnect(ws)
+        return
+
     try:
         while True:
-            # Keep connection alive, ignore client messages
             await ws.receive_text()
     except WebSocketDisconnect:
         manager.disconnect(ws)

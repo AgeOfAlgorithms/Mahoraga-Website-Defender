@@ -175,7 +175,7 @@ async def run_glm_agent(
     prompt: str,
     system_prompt: str,
     max_turns: int = 20,
-    model: str = "glm-4-plus",
+    model: str = "glm-5.1",
 ) -> str:
     """Run a GLM agent with sandboxed tool access.
 
