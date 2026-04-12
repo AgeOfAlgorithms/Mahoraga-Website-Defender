@@ -206,7 +206,11 @@ async def run_agent(
         choice = response.choices[0]
         message = choice.message
 
-        messages.append(message.model_dump())
+        # Gemini can return null content with tool_calls — must ensure content is a string
+        msg_dict = message.model_dump()
+        if msg_dict.get("content") is None:
+            msg_dict["content"] = ""
+        messages.append(msg_dict)
 
         if choice.finish_reason != "tool_calls" or not message.tool_calls:
             return message.content or ""

@@ -111,7 +111,7 @@ class Orchestrator:
         self.shadow_analyzer = ShadowAnalyzer(
             shadow_log_path=project_dir / "logs" / "nginx" / "shadow.log",
             cost_governor=self.cost_governor,
-            interval=15.0,
+            interval=10.0,
             on_exploit_detected=self._enqueue_exploit,
         )
 
