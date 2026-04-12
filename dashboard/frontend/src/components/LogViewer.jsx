@@ -101,14 +101,54 @@ export default function LogViewer({ prodLogs, shadowLogs, watcherPaths, analyzer
   }, [logs.length, autoScroll]);
 
   const filteredLogs = useMemo(() => {
-    if (!filter) return logs;
-    const q = filter.toLowerCase();
-    return logs.filter(l =>
-      l.path?.toLowerCase().includes(q) ||
-      l.method?.toLowerCase().includes(q) ||
-      String(l.status).includes(q) ||
-      l.ip?.includes(q)
-    );
+    const filtered = !filter ? logs : logs.filter(l => {
+      const q = filter.toLowerCase();
+      return (
+        l.path?.toLowerCase().includes(q) ||
+        l.method?.toLowerCase().includes(q) ||
+        String(l.status).includes(q) ||
+        l.ip?.includes(q)
+      );
+    });
+
+    // Group consecutive identical requests (same method+path+ip+status)
+    const grouped = [];
+    for (const entry of filtered) {
+      const last = grouped[grouped.length - 1];
+      if (
+        last && !last._group && !last._grouped &&
+        last.method === entry.method &&
+        last.path === entry.path &&
+        last.ip === entry.ip &&
+        last.status === entry.status &&
+        last.env === entry.env
+      ) {
+        // Start a group
+        const group = {
+          ...entry,
+          _group: true,
+          _count: 2,
+          _firstTime: last.time,
+          _lastTime: entry.time,
+          _samples: [last, entry],
+        };
+        grouped[grouped.length - 1] = group;
+      } else if (last?._group &&
+        last.method === entry.method &&
+        last.path === entry.path &&
+        last.ip === entry.ip &&
+        last.status === entry.status &&
+        last.env === entry.env
+      ) {
+        // Extend existing group
+        last._count++;
+        last._lastTime = entry.time;
+        if (last._samples.length < 5) last._samples.push(entry);
+      } else {
+        grouped.push(entry);
+      }
+    }
+    return grouped;
   }, [logs, filter]);
 
   const toggleExpand = (idx) => {
@@ -232,6 +272,9 @@ export default function LogViewer({ prodLogs, shadowLogs, watcherPaths, analyzer
 }
 
 function LogRow({ entry, idx, expanded, toggleExpand, getRowClass, eventsByPath }) {
+  const isGroup = entry._group;
+  const isExpanded = expanded.has(idx);
+
   return (
     <div className={`${entry._new ? "log-entry-new" : ""}`}>
       <div
@@ -245,12 +288,19 @@ function LogRow({ entry, idx, expanded, toggleExpand, getRowClass, eventsByPath 
         <span className={`w-8 shrink-0 ${STATUS_COLORS[entry.status] || "text-gray-400"}`}>
           {entry.status}
         </span>
-        <span className="flex-1 truncate text-gray-300">{entry.path}</span>
+        <span className="flex-1 truncate text-gray-300">
+          {entry.path}
+          {isGroup && (
+            <span className="ml-2 px-1.5 py-0.5 rounded bg-amber-900/60 text-amber-300 text-[10px] font-bold">
+              {"\u00D7"}{entry._count}
+            </span>
+          )}
+        </span>
         <span className="text-gray-600 w-32 shrink-0 text-right">{entry.ip}</span>
-        <span className="text-gray-700 w-4">{expanded.has(idx) ? "\u25BC" : "\u25B6"}</span>
+        <span className="text-gray-700 w-4">{isExpanded ? "\u25BC" : "\u25B6"}</span>
       </div>
 
-      {expanded.has(idx) && (
+      {isExpanded && !isGroup && (
         <div className="px-8 py-2 bg-gray-900/80 border-b border-gray-800 space-y-2">
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px]">
             <KeyVal k="Method" v={entry.method} color={METHOD_COLORS[entry.method]} />
@@ -272,6 +322,37 @@ function LogRow({ entry, idx, expanded, toggleExpand, getRowClass, eventsByPath 
               <span className="text-amber-200">
                 {eventsByPath[entry.path].event_type} [{eventsByPath[entry.path].severity}]
               </span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {isExpanded && isGroup && (
+        <div className="px-4 py-2 bg-gray-900/80 border-b border-gray-800 space-y-1">
+          <div className="flex items-center gap-3 text-[11px] text-gray-400 mb-2">
+            <span className="font-bold text-amber-400">{entry._count} repeated requests</span>
+            <span>{entry._firstTime?.match(/(\d{2}:\d{2}:\d{2})/)?.[1]} — {entry._lastTime?.match(/(\d{2}:\d{2}:\d{2})/)?.[1]}</span>
+            <span className="text-gray-600">{entry.method} {entry.path} → {entry.status}</span>
+          </div>
+          <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Latest samples</div>
+          {entry._samples.map((s, i) => (
+            <div key={i} className="flex gap-2 px-2 py-0.5 text-[11px] bg-gray-950/50 rounded">
+              <span className="text-gray-600 w-16 shrink-0">{s.time?.match(/(\d{2}:\d{2}:\d{2})/)?.[1]}</span>
+              <span className={`w-6 shrink-0 ${STATUS_COLORS[s.status]}`}>{s.status}</span>
+              {(s.body || s.req_body) && (
+                <span className="text-gray-400 truncate">{s.body || s.req_body}</span>
+              )}
+              {s.auth && !s.body && !s.req_body && (
+                <span className="text-gray-500 truncate">{s.auth}</span>
+              )}
+              {!s.body && !s.req_body && !s.auth && (
+                <span className="text-gray-600">—</span>
+              )}
+            </div>
+          ))}
+          {entry._count > entry._samples.length && (
+            <div className="text-[10px] text-gray-600 px-2">
+              ... and {entry._count - entry._samples.length} more
             </div>
           )}
         </div>
