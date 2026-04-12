@@ -112,8 +112,14 @@ export default function LogViewer({ prodLogs, shadowLogs, watcherPaths, analyzer
     });
 
     // Group consecutive identical requests (same method+path+ip+status)
+    // Assign stable IDs based on content, not position
     const grouped = [];
     for (const entry of filtered) {
+      // Generate a stable ID from the entry's content
+      if (!entry._id) {
+        entry._id = `${entry.time}|${entry.method}|${entry.path}|${entry.ip}|${entry.status}|${entry.env || "prod"}`;
+      }
+
       const last = grouped[grouped.length - 1];
       if (
         last && !last._group && !last._grouped &&
@@ -123,9 +129,9 @@ export default function LogViewer({ prodLogs, shadowLogs, watcherPaths, analyzer
         last.status === entry.status &&
         last.env === entry.env
       ) {
-        // Start a group
         const group = {
           ...entry,
+          _id: `group_${last._id}`,
           _group: true,
           _count: 2,
           _firstTime: last.time,
@@ -140,7 +146,6 @@ export default function LogViewer({ prodLogs, shadowLogs, watcherPaths, analyzer
         last.status === entry.status &&
         last.env === entry.env
       ) {
-        // Extend existing group
         last._count++;
         last._lastTime = entry.time;
         if (last._samples.length < 5) last._samples.push(entry);
@@ -369,11 +374,11 @@ function LogList({ logs, expanded, toggleExpand, getRowClass, eventsByPath }) {
       </div>
     );
   }
-  return logs.map((entry, idx) => (
+  return logs.map((entry) => (
     <LogRow
-      key={idx}
+      key={entry._id}
       entry={entry}
-      idx={`${entry.env || "prod"}_${idx}`}
+      idx={entry._id}
       expanded={expanded}
       toggleExpand={toggleExpand}
       getRowClass={getRowClass}
