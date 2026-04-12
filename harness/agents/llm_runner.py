@@ -213,7 +213,15 @@ async def run_agent(
         messages.append(msg_dict)
 
         if choice.finish_reason != "tool_calls" or not message.tool_calls:
-            return message.content or ""
+            # If model stopped with content, return it
+            if message.content:
+                return message.content
+            # Model stopped without content after tool calls — nudge it
+            messages.append({
+                "role": "user",
+                "content": "Now provide your final JSON response as specified in the response format.",
+            })
+            continue
 
         for tool_call in message.tool_calls:
             if tool_call.function.name == "bash":

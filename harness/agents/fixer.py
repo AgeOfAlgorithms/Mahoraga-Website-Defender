@@ -164,6 +164,10 @@ class Fixer:
 
         self.cost_governor.record_spend(triage.event_id, CODE_FIX_COST_ESTIMATE)
 
+        if not response_text.strip():
+            logger.error("Fixer returned empty response for %s", triage.event_id)
+            return None
+
         try:
             text = response_text.strip()
             # Try to extract JSON from the response (may be mixed with text)
@@ -176,7 +180,7 @@ class Fixer:
                 text = text[start:end]
             data = json.loads(text)
         except json.JSONDecodeError:
-            logger.error("Failed to parse fixer response: %s", response_text[:200])
+            logger.error("Failed to parse fixer response: %s", response_text[:300])
             return None
 
         service = data.get("service", data.get("container", "unknown"))
