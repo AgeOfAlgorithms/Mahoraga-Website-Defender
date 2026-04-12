@@ -43,7 +43,8 @@ does it block authorized users?
 in the threat report? REJECT if it also fixes other bugs, adds comments, \
 refactors code, adds type hints, or makes any change not directly needed \
 for this specific fix. The patch must be laser-focused.
-5. Are the rollback steps adequate?
+5. Do NOT reject based on rollback path format — paths like crapi-fork/... are correct \
+(they are host filesystem paths, not container paths).
 
 ## Verification
 Use `docker exec` to read the patched file inside the container and verify \
