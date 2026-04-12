@@ -149,23 +149,45 @@ class Fixer:
         self.cost_governor = cost_governor
 
     def _pre_read_source(self, triage) -> str:
-        """Try to pre-read the relevant source file based on the exploit details."""
+        """Pre-read relevant source files based on the exploit details."""
         from pathlib import Path
         analysis = (triage.analysis + " " + triage.recommended_action).lower()
 
+        files_to_read = set()
         for keyword, rel_path in self.PATH_TO_SOURCE.items():
             if keyword.lower() in analysis:
-                full_path = Path("crapi-fork") / rel_path
-                if full_path.exists():
-                    content = full_path.read_text()
-                    # Add line numbers
-                    lines = content.split("\n")
-                    numbered = "\n".join(f"{i+1:4d} | {line}" for i, line in enumerate(lines))
-                    # Truncate if too long
-                    if len(numbered) > 6000:
-                        numbered = numbered[:6000] + "\n... (truncated)"
-                    return f"# File: crapi-fork/{rel_path}\n{numbered}"
-        return ""
+                files_to_read.add(rel_path)
+
+        # Always include URL routing for context
+        files_to_read.add("services/workshop/crapi_site/urls.py")
+
+        # If a views.py matched, also include its serializers and urls
+        for f in list(files_to_read):
+            if f.endswith("views.py"):
+                parent = str(Path(f).parent)
+                for extra in ["serializers.py", "urls.py", "models.py"]:
+                    extra_path = f"{parent}/{extra}"
+                    if Path("crapi-fork") / extra_path:
+                        files_to_read.add(extra_path)
+
+        output = []
+        total_len = 0
+        for rel_path in sorted(files_to_read):
+            full_path = Path("crapi-fork") / rel_path
+            if not full_path.exists():
+                continue
+            content = full_path.read_text()
+            lines = content.split("\n")
+            numbered = "\n".join(f"{i+1:4d} | {line}" for i, line in enumerate(lines))
+            # Budget: keep total under 12000 chars
+            if total_len + len(numbered) > 12000:
+                numbered = numbered[:max(0, 12000 - total_len)] + "\n... (truncated)"
+                output.append(f"# File: crapi-fork/{rel_path}\n{numbered}")
+                break
+            output.append(f"# File: crapi-fork/{rel_path}\n{numbered}")
+            total_len += len(numbered)
+
+        return "\n\n".join(output)
 
     async def generate_patch(self, triage: TriageResult, rejections: list = None) -> PatchProposal | None:
         """Generate and apply a patch inside running containers."""

@@ -360,7 +360,7 @@ class Orchestrator:
             confidence=0.9,
             severity=Severity(severity),
             recommended_action=fix_rec,
-            analysis=f"Shadow LLM analysis: {vuln}. Evidence: {evidence[:200]}",
+            analysis=f"Shadow LLM analysis: {vuln}. Evidence: {evidence}. Request: {attack.get('request', '')}",
             approval_policy=ApprovalPolicy.AUTO_APPLY_NOTIFY,
         )
 
