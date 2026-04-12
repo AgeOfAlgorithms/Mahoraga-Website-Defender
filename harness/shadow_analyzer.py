@@ -22,8 +22,7 @@ import logging
 import time
 from pathlib import Path
 
-from claude_agent_sdk import query, ClaudeAgentOptions, AssistantMessage, TextBlock
-
+from harness.agents.llm_runner import run_completion
 from harness.cost_governor import CostGovernor
 
 logger = logging.getLogger(__name__)
@@ -201,27 +200,21 @@ class ShadowAnalyzer:
             log_text = "\n".join(new_entries)
         prompt = ANALYSIS_PROMPT.format(log_entries=log_text)
 
-        options = ClaudeAgentOptions(
-            model="claude-sonnet-4-6",
-            system_prompt=(
-                "You are a security analyst. Analyze access logs to detect "
-                "successful attacks. Respond with JSON only. Be conservative — "
-                "only flag attacks where the response PROVES success."
-            ),
-            max_turns=1,
+        system_prompt = (
+            "You are a security analyst. Analyze access logs to detect "
+            "successful attacks. Respond with JSON only. Be conservative — "
+            "only flag attacks where the response PROVES success."
         )
 
         response_text = ""
         max_retries = 3
         for attempt in range(max_retries):
-            response_text = ""
             try:
-                async for message in query(prompt=prompt, options=options):
-                    if isinstance(message, AssistantMessage):
-                        for block in message.content:
-                            if isinstance(block, TextBlock):
-                                response_text += block.text
-                break  # success
+                response_text = await run_completion(
+                    prompt=prompt,
+                    system_prompt=system_prompt,
+                )
+                break
             except Exception as e:
                 logger.error(
                     "Shadow analysis LLM call failed (attempt %d/%d): %s",

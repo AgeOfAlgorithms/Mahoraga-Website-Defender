@@ -3,7 +3,7 @@
 Separate from the Fixer so it can't be lenient about its own work.
 This is the generator-evaluator separation from the Anthropic harness article.
 
-Uses GLM (Zhipu AI) with a sandboxed bash tool that only allows
+Uses Gemini with a sandboxed bash tool that only allows
 docker exec commands into whitelisted containers.
 """
 
@@ -14,7 +14,7 @@ import json
 import logging
 from dataclasses import asdict
 
-from harness.agents.glm_runner import run_glm_agent
+from harness.agents.llm_runner import run_agent
 from harness.cost_governor import CostGovernor
 from harness.types import PatchProposal, ReviewResult, TriageResult
 
@@ -98,7 +98,7 @@ class Reviewer:
         response_text = ""
         for attempt in range(max_retries):
             try:
-                response_text = await run_glm_agent(
+                response_text = await run_agent(
                     prompt=prompt,
                     system_prompt=SYSTEM_PROMPT,
                     max_turns=10,

@@ -1,6 +1,6 @@
 """Fixer agent — patches vulnerabilities by editing source in crapi-fork/.
 
-Uses GLM (Zhipu AI) with a sandboxed bash tool. The sandbox enforces:
+Uses Gemini with a sandboxed bash tool. The sandbox enforces:
 - File access ONLY within crapi-fork/ (path validation, not just prompting)
 - docker exec only into whitelisted containers (for reloads)
 - docker compose rebuild for compiled services (Java/Go)
@@ -20,7 +20,7 @@ import json
 import logging
 from dataclasses import asdict
 
-from harness.agents.glm_runner import run_glm_agent
+from harness.agents.llm_runner import run_agent
 from harness.cost_governor import CostGovernor
 from harness.types import PatchProposal, TriageResult
 
@@ -144,7 +144,7 @@ class Fixer:
         response_text = ""
         for attempt in range(max_retries):
             try:
-                response_text = await run_glm_agent(
+                response_text = await run_agent(
                     prompt=prompt,
                     system_prompt=SYSTEM_PROMPT,
                     max_turns=20,
