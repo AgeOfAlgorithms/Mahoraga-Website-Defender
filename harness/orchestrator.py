@@ -379,7 +379,11 @@ class Orchestrator:
         retry_label = f" (retry #{len(rejections)})" if rejections else ""
         self._audit("fixer_started", event_id, agent_name,
                      f"Fixing{retry_label} {exploit_type}: {vuln}")
-        patch = await self.fixer.generate_patch(triage, rejections=rejections)
+        def _on_tool(cmd):
+            self._audit("tool_call", event_id, agent_name, cmd)
+
+        patch = await self.fixer.generate_patch(
+            triage, rejections=rejections, on_tool_call=_on_tool)
         dedup_key = attack.get("_dedup_key", f"{exploit_type}|unknown")
 
         if patch is None:

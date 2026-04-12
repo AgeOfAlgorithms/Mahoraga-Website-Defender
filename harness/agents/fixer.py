@@ -189,7 +189,7 @@ class Fixer:
 
         return "\n\n".join(output)
 
-    async def generate_patch(self, triage: TriageResult, rejections: list = None) -> PatchProposal | None:
+    async def generate_patch(self, triage: TriageResult, rejections: list = None, on_tool_call: callable = None) -> PatchProposal | None:
         """Generate and apply a patch inside running containers."""
         if not self.cost_governor.can_spend(triage.event_id, CODE_FIX_COST_ESTIMATE):
             logger.warning("Budget exceeded, cannot patch for %s", triage.event_id)
@@ -221,6 +221,7 @@ class Fixer:
                     prompt=prompt,
                     system_prompt=SYSTEM_PROMPT,
                     max_turns=100,
+                    on_tool_call=on_tool_call,
                 )
                 break  # success
             except Exception as e:

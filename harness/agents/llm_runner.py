@@ -179,6 +179,7 @@ async def run_agent(
     system_prompt: str,
     max_turns: int = 20,
     model: str = "gemini-3-flash-preview",
+    on_tool_call: callable = None,
 ) -> str:
     """Run an LLM agent with sandboxed bash tool access.
 
@@ -232,6 +233,8 @@ async def run_agent(
                     command = tool_call.function.arguments
 
                 logger.debug("[%s] bash: %s", model, command[:120])
+                if on_tool_call:
+                    on_tool_call(command[:120])
                 output = _execute_command(command)
 
                 messages.append({
