@@ -134,11 +134,13 @@ export default function KanbanBoard({ events, audit, patches }) {
                   key={evt.event_id}
                   onClick={() => setSelected(selected?.event_id === evt.event_id ? null : evt)}
                   className={`kanban-card p-2.5 rounded cursor-pointer border ${
-                    selected?.event_id === evt.event_id
-                      ? "border-blue-500 bg-gray-800"
-                      : evt._active
-                        ? "border-amber-500/70 bg-amber-950/30 ring-1 ring-amber-500/30"
-                        : "border-gray-700/50 bg-gray-800/80 hover:border-gray-600"
+                    selected?.event_id === evt.event_id && evt._active
+                      ? "border-blue-400 bg-amber-950/40 ring-1 ring-blue-500/40"
+                      : selected?.event_id === evt.event_id
+                        ? "border-blue-500 bg-blue-950/30"
+                        : evt._active
+                          ? "border-amber-500/70 bg-amber-950/30 ring-1 ring-amber-500/30"
+                          : "border-gray-700/50 bg-gray-800/80 hover:border-gray-600"
                   }`}
                 >
                   <div className="flex items-start justify-between gap-1">

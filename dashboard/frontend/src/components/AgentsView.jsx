@@ -41,7 +41,7 @@ const LEVEL_COLORS = {
   default: "text-gray-400",
 };
 
-const STALE_THRESHOLD_MS = 300_000; // 5 minutes — LLM calls can take a while
+const STALE_THRESHOLD_MS = 20_000;
 
 function classifyLevel(entry) {
   const detail = (entry.detail || "").toLowerCase();
