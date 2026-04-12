@@ -58,7 +58,7 @@ export default function KanbanBoard({ events, audit, patches }) {
         ? eventAudit.reduce((a, b) => (a.timestamp || 0) > (b.timestamp || 0) ? a : b)
         : null;
       const isActive = lastAction && (
-        (status === "fixing" && lastAction.action === "fixer_started") ||
+        (status === "fixing" && (lastAction.action === "fixer_started" || lastAction.action === "tool_call")) ||
         (status === "fix_reviewing" && lastAction.action === "patch_proposed")
       );
 
