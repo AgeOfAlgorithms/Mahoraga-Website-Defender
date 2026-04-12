@@ -325,7 +325,7 @@ class Orchestrator:
 
         self._audit("shadow_exploit_detected", event_id, "shadow_analyzer",
                      f"type={exploit_type} severity={severity} "
-                     f"vuln={vuln_key[:100]} request={request_line[:100]}")
+                     f"vuln={vuln_key} request={request_line}")
 
         self._pending_vulns.add(vuln_key)
         await self._exploit_queue.put(attack)
@@ -365,7 +365,7 @@ class Orchestrator:
         )
 
         self._audit("fixer_started", event_id, agent_name,
-                     f"Fixing {exploit_type}: {vuln[:80]}")
+                     f"Fixing {exploit_type}: {vuln}")
         patch = await self.fixer.generate_patch(triage)
         if patch is None:
             self._audit("error", event_id, agent_name,
