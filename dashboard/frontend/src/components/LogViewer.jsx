@@ -36,8 +36,7 @@ const HTTP_STATUS_NAMES = {
   500: "Server Error", 502: "Bad Gateway", 503: "Service Unavailable",
 };
 
-export default function LogViewer({ prodLogs, shadowLogs, watcherPaths, analyzerTypes, events, audit }) {
-  const [env, setEnv] = useState("all");
+export default function LogViewer({ prodLogs, shadowLogs, watcherPaths, analyzerTypes, events, audit, shadowSessionCount = 0 }) {
   const [expanded, setExpanded] = useState(new Set());
   const [autoScroll, setAutoScroll] = useState(true);
   const [filter, setFilter] = useState("");
@@ -190,24 +189,6 @@ export default function LogViewer({ prodLogs, shadowLogs, watcherPaths, analyzer
     <div className="h-full flex flex-col">
       {/* Toolbar */}
       <div className="flex items-center gap-3 px-4 py-2 bg-gray-900/50 border-b border-gray-800 shrink-0">
-        <div className="flex rounded overflow-hidden border border-gray-700">
-          {[
-            { id: "all", label: "ALL", count: allLogs.length, active: "bg-gray-600" },
-            { id: "prod", label: "PROD", count: allLogs.filter(l => l.env === "prod").length, active: "bg-blue-600" },
-            { id: "shadow", label: "SHADOW", count: allLogs.filter(l => l.env === "shadow").length, active: "bg-purple-600" },
-          ].map(btn => (
-            <button
-              key={btn.id}
-              onClick={() => setEnv(btn.id)}
-              className={`px-3 py-1 text-xs font-medium ${
-                env === btn.id ? `${btn.active} text-white` : "bg-gray-800 text-gray-400 hover:text-white"
-              }`}
-            >
-              {btn.label} ({btn.count})
-            </button>
-          ))}
-        </div>
-
         <input
           type="text"
           placeholder="Filter by path, method, status, IP..."
@@ -234,46 +215,30 @@ export default function LogViewer({ prodLogs, shadowLogs, watcherPaths, analyzer
         </div>
       </div>
 
-      {/* Log entries */}
-      {env === "all" ? (
-        /* Split screen for ALL view */
-        <div className="flex-1 flex min-h-0">
-          <LogPanel
-            title="PROD"
-            titleColor="text-blue-400"
-            logs={filteredLogs.filter(l => (l.env || "prod") === "prod")}
-            expanded={expanded}
-            toggleExpand={toggleExpand}
-            getRowClass={getRowClass}
-            eventsByPath={eventsByPath}
-            autoScroll={autoScroll}
-            side="left"
-          />
-          <div className="w-px bg-gray-700 shrink-0" />
-          <LogPanel
-            title="SHADOW"
-            titleColor="text-purple-400"
-            logs={filteredLogs.filter(l => l.env === "shadow")}
-            expanded={expanded}
-            toggleExpand={toggleExpand}
-            getRowClass={getRowClass}
-            eventsByPath={eventsByPath}
-            autoScroll={autoScroll}
-            side="right"
-          />
-        </div>
-      ) : (
-        /* Single pane for PROD or SHADOW */
-        <div ref={scrollRef} className="flex-1 overflow-y-auto font-mono text-xs">
-          <LogList
-            logs={filteredLogs}
-            expanded={expanded}
-            toggleExpand={toggleExpand}
-            getRowClass={getRowClass}
-            eventsByPath={eventsByPath}
-          />
-        </div>
-      )}
+      {/* Split screen log view */}
+      <div className="flex-1 flex min-h-0">
+        <LogPanel
+          title="PROD"
+          titleColor="text-blue-400"
+          logs={filteredLogs.filter(l => (l.env || "prod") === "prod")}
+          expanded={expanded}
+          toggleExpand={toggleExpand}
+          getRowClass={getRowClass}
+          eventsByPath={eventsByPath}
+          autoScroll={autoScroll}
+        />
+        <div className="w-px bg-gray-700 shrink-0" />
+        <LogPanel
+          title={`SHADOW${shadowSessionCount > 0 ? ` \u2022 ${shadowSessionCount} session${shadowSessionCount !== 1 ? "s" : ""}` : ""}`}
+          titleColor="text-purple-400"
+          logs={filteredLogs.filter(l => l.env === "shadow")}
+          expanded={expanded}
+          toggleExpand={toggleExpand}
+          getRowClass={getRowClass}
+          eventsByPath={eventsByPath}
+          autoScroll={autoScroll}
+        />
+      </div>
     </div>
   );
 }

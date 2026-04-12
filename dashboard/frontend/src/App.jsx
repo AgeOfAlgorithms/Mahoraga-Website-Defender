@@ -213,6 +213,7 @@ export default function App() {
             analyzerTypes={analyzerTypes}
             events={events}
             audit={audit}
+            shadowSessionCount={shadowSessions}
           />
         )}
         {tab === "agents" && (
