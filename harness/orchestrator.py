@@ -90,21 +90,22 @@ class Orchestrator:
         self._exploit_queue: asyncio.Queue[dict] = asyncio.Queue()
         self._review_queue: asyncio.Queue[tuple] = asyncio.Queue()  # (triage, patch)
 
-        # Dedup tracking
+        # Dedup tracking — keyed on vulnerability description, not generic type
         self._pending_vulns: set[str] = set()   # vuln descriptions currently queued
-        self._fixed_types: set[str] = set()     # exploit types already patched
+        self._fixed_vulns: set[str] = set()     # vuln descriptions already patched
 
-        # Restore fixed types from previous patches on disk
+        # Restore fixed vulns from previous patches on disk
         for patch_file in self.patches_dir.glob("*.json"):
             try:
                 data = json.loads(patch_file.read_text())
-                if data.get("classification"):
-                    self._fixed_types.add(data["classification"])
+                # Use the analysis field which contains the specific vuln description
+                analysis = data.get("analysis", "")[:80]
+                if analysis:
+                    self._fixed_vulns.add(analysis)
             except (json.JSONDecodeError, OSError):
                 pass
-        if self._fixed_types:
-            logger.info("Restored %d fixed types from disk: %s",
-                        len(self._fixed_types), self._fixed_types)
+        if self._fixed_vulns:
+            logger.info("Restored %d fixed vulns from disk", len(self._fixed_vulns))
 
         # Shadow LLM analyzer — generic exploit detection every 15s
         self.shadow_analyzer = ShadowAnalyzer(
@@ -307,9 +308,9 @@ class Orchestrator:
         vuln_key = attack.get("vulnerability", "")[:80]
         exploit_type = attack.get("type", "unknown")
 
-        # Skip if we already fixed or are fixing this type
-        if exploit_type in self._fixed_types:
-            logger.debug("Skipping already-fixed exploit type: %s", exploit_type)
+        # Skip if we already fixed or are fixing this specific vulnerability
+        if vuln_key in self._fixed_vulns:
+            logger.debug("Skipping already-fixed vuln: %s", vuln_key[:50])
             return
         if vuln_key in self._pending_vulns:
             logger.debug("Skipping duplicate queued vuln: %s", vuln_key[:50])
@@ -372,8 +373,8 @@ class Orchestrator:
             self._pending_vulns.discard(vuln[:80])
             return
 
-        # Mark this exploit type as fixed — don't re-fix
-        self._fixed_types.add(exploit_type)
+        # Mark this specific vulnerability as fixed — don't re-fix
+        self._fixed_vulns.add(vuln[:80])
         self._pending_vulns.discard(vuln[:80])
 
         # Save patch to disk so dashboard can display it
