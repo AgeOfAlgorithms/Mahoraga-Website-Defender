@@ -186,6 +186,20 @@ class ShadowAnalyzer:
         if len(new_entries) > 100:
             new_entries = new_entries[-100:]
 
+        # Truncate long fields (JWTs, response bodies) to reduce prompt size
+        def _truncate_entry(line: str) -> str:
+            import re
+            # Shorten JWT tokens to first 30 chars + ...
+            line = re.sub(r'(eyJ[A-Za-z0-9_-]{30})[A-Za-z0-9_-]+\.([A-Za-z0-9_-]{30})[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*', r'\1...\2...', line)
+            # Shorten very long resp_body (keep first 300 chars)
+            m = re.search(r'resp_body="(.{300,})"', line)
+            if m:
+                line = line[:m.start(1)] + m.group(1)[:300] + '..."'
+            return line
+
+        context_entries = [_truncate_entry(e) for e in context_entries]
+        new_entries = [_truncate_entry(e) for e in new_entries]
+
         entries = context_entries + new_entries
 
         # Mark context vs new so the LLM focuses on new but has context
