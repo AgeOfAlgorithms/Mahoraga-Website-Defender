@@ -174,7 +174,10 @@ class Fixer:
 
         return "\n\n".join(output)
 
-    async def generate_patch(self, triage: TriageResult, rejections: list = None, on_tool_call: callable = None) -> PatchProposal | None:
+    def get_system_prompt(self) -> str:
+        return SYSTEM_PROMPT
+
+    async def generate_patch(self, triage: TriageResult, rejections: list = None, on_tool_call: callable = None, on_prompt_built: callable = None) -> PatchProposal | None:
         """Generate and apply a patch inside running containers."""
         if not self.cost_governor.can_spend(triage.event_id, CODE_FIX_COST_ESTIMATE):
             logger.warning("Budget exceeded, cannot patch for %s", triage.event_id)
@@ -197,6 +200,9 @@ class Fixer:
                 if rej.get('suggestion'):
                     prompt += f"Reviewer suggestion: {rej['suggestion']}\n"
             prompt += "\nYou MUST try a DIFFERENT approach this time.\n"
+
+        if on_prompt_built:
+            on_prompt_built(SYSTEM_PROMPT, prompt)
 
         max_retries = 3
         response_text = ""

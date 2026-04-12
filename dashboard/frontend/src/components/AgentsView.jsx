@@ -87,8 +87,34 @@ function StatusDot({ status }) {
 
 function AgentLogEntry({ entry }) {
   const [open, setOpen] = useState(false);
+  const action = entry.action || "";
+  const isPrompt = action === "system_prompt" || action === "user_prompt";
   const level = classifyLevel(entry);
   const levelColor = LEVEL_COLORS[level] || LEVEL_COLORS.default;
+
+  if (isPrompt) {
+    const label = action === "system_prompt" ? "System Prompt" : "User Prompt";
+    const borderColor = action === "system_prompt" ? "border-cyan-800" : "border-violet-800";
+    const bgColor = action === "system_prompt" ? "bg-cyan-950/20" : "bg-violet-950/20";
+    const labelColor = action === "system_prompt" ? "text-cyan-400" : "text-violet-400";
+    return (
+      <div className={`mx-1 my-1 border rounded ${borderColor} ${bgColor}`}>
+        <button
+          onClick={() => setOpen(!open)}
+          className={`w-full flex items-center gap-2 px-2 py-1 text-[10px] ${labelColor} hover:brightness-125`}
+        >
+          <span>{open ? "\u25BC" : "\u25B6"}</span>
+          <span className="font-bold uppercase tracking-wider">{label}</span>
+          <span className="text-gray-600 ml-auto">{formatTime(entry.timestamp)}</span>
+        </button>
+        {open && (
+          <pre className="px-3 pb-2 text-[11px] text-gray-300 leading-relaxed whitespace-pre-wrap break-words max-h-64 overflow-y-auto">
+            {entry.detail}
+          </pre>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div
@@ -108,7 +134,6 @@ function AgentLogEntry({ entry }) {
 function AgentPanel({ agent, entries, status }) {
   const scrollRef = useRef(null);
   const isAtBottom = useRef(true);
-  const [promptOpen, setPromptOpen] = useState(false);
 
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
@@ -133,20 +158,8 @@ function AgentPanel({ agent, entries, status }) {
         <span className={`ml-auto text-[10px] uppercase tracking-wider ${statusTextColor}`}>{statusLabel}</span>
       </div>
 
-      <div className="shrink-0 border-b border-gray-800/50">
-        <button
-          onClick={() => setPromptOpen(!promptOpen)}
-          className="w-full flex items-center gap-1 px-3 py-1 text-[10px] text-gray-500 hover:text-gray-300 transition-colors"
-        >
-          <span className="text-gray-600">{promptOpen ? "\u25BC" : "\u25B6"}</span>
-          <span>System Prompt</span>
-          <span className="ml-auto text-gray-600">{agent.description}</span>
-        </button>
-        {promptOpen && (
-          <div className="px-3 pb-2 text-[11px] text-gray-400 leading-relaxed bg-gray-900/30 max-h-32 overflow-y-auto">
-            {agent.systemPrompt}
-          </div>
-        )}
+      <div className="shrink-0 border-b border-gray-800/50 px-3 py-1 text-[10px] text-gray-600">
+        {agent.description}
       </div>
 
       <div

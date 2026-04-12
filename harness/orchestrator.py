@@ -382,8 +382,13 @@ class Orchestrator:
         def _on_tool(cmd):
             self._audit("tool_call", event_id, agent_name, cmd)
 
+        def _on_prompt(sys_prompt, user_prompt):
+            self._audit("system_prompt", event_id, agent_name, sys_prompt)
+            self._audit("user_prompt", event_id, agent_name, user_prompt)
+
         patch = await self.fixer.generate_patch(
-            triage, rejections=rejections, on_tool_call=_on_tool)
+            triage, rejections=rejections, on_tool_call=_on_tool,
+            on_prompt_built=_on_prompt)
         dedup_key = attack.get("_dedup_key", f"{exploit_type}|unknown")
 
         if patch is None:
@@ -413,7 +418,11 @@ class Orchestrator:
         event_id = triage.event_id
         dedup_key = attack.get("_dedup_key", "")
 
-        review = await self.reviewer.review(triage, patch)
+        def _on_review_prompt(sys_prompt, user_prompt):
+            self._audit("system_prompt", event_id, "reviewer", sys_prompt)
+            self._audit("user_prompt", event_id, "reviewer", user_prompt)
+
+        review = await self.reviewer.review(triage, patch, on_prompt_built=_on_review_prompt)
         if review and not review.approved:
             self._audit("review_rejected", event_id, "reviewer",
                          f"Patch rejected: {review.issues}")

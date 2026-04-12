@@ -81,7 +81,10 @@ class Reviewer:
         self.cost_governor = cost_governor
         self.project_dir = project_dir
 
-    async def review(self, triage: TriageResult, patch: PatchProposal) -> ReviewResult | None:
+    def get_system_prompt(self) -> str:
+        return SYSTEM_PROMPT
+
+    async def review(self, triage: TriageResult, patch: PatchProposal, on_prompt_built: callable = None) -> ReviewResult | None:
         """Review a proposed patch."""
         if not self.cost_governor.can_spend(triage.event_id, REVIEW_COST_ESTIMATE):
             logger.warning("Budget exceeded, cannot review patch %s", patch.patch_id)
@@ -94,6 +97,9 @@ class Reviewer:
         triage_json = json.dumps(asdict(triage), indent=2, default=str)
         patch_json = json.dumps(asdict(patch), indent=2, default=str)
         prompt = REVIEW_PROMPT.format(triage_json=triage_json, patch_json=patch_json)
+
+        if on_prompt_built:
+            on_prompt_built(SYSTEM_PROMPT, prompt)
 
         max_retries = 3
         response_text = ""
