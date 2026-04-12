@@ -97,7 +97,7 @@ function AgentLogEntry({ entry }) {
     >
       <span className="text-gray-600 shrink-0 w-16">{formatTime(entry.timestamp)}</span>
       <span className={`shrink-0 w-16 uppercase text-[10px] leading-4 font-semibold ${levelColor}`}>{level}</span>
-      <span className={`text-gray-300 min-w-0 ${open ? "break-words" : "truncate"}`}>
+      <span className={`text-gray-300 break-words min-w-0 ${open ? "" : "line-clamp-3"}`}>
         <span className="text-gray-500">{entry.action}</span>
         {entry.detail && <span className="ml-1.5">{entry.detail}</span>}
       </span>
