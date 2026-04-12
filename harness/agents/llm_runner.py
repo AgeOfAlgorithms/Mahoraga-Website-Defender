@@ -206,9 +206,9 @@ async def run_agent(
         choice = response.choices[0]
         message = choice.message
 
-        # Gemini can return null content with tool_calls — must ensure content is a string
-        msg_dict = message.model_dump()
-        if msg_dict.get("content") is None:
+        # Gemini rejects null values in message fields — strip them all
+        msg_dict = {k: v for k, v in message.model_dump().items() if v is not None}
+        if "content" not in msg_dict:
             msg_dict["content"] = ""
         messages.append(msg_dict)
 
