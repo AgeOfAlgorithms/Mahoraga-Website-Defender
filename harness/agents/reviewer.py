@@ -3,7 +3,7 @@
 Separate from the Fixer so it can't be lenient about its own work.
 This is the generator-evaluator separation from the Anthropic harness article.
 
-Uses Gemini with a sandboxed bash tool that only allows
+Uses LLM with a sandboxed bash tool that only allows
 docker exec commands into whitelisted containers.
 """
 
@@ -71,7 +71,7 @@ SYSTEM_PROMPT = (
     "no code fences — just the raw JSON object."
 )
 
-REVIEW_COST_ESTIMATE = 0.02  # GLM is much cheaper than Claude
+REVIEW_COST_ESTIMATE = 0.02
 
 
 class Reviewer:
@@ -107,7 +107,7 @@ class Reviewer:
                 break  # success
             except Exception as e:
                 logger.error(
-                    "Reviewer GLM call failed for %s (attempt %d/%d): %s",
+                    "Reviewer LLM call failed for %s (attempt %d/%d): %s",
                     patch.patch_id, attempt + 1, max_retries, e,
                 )
                 if attempt < max_retries - 1:

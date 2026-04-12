@@ -1,4 +1,4 @@
-"""LLM agentic runner — sandboxed tool-calling loop for Gemini.
+"""LLM agentic runner — sandboxed tool-calling loop.
 
 Exposes a sandboxed Bash tool that allows:
   1. Reading/writing files ONLY within crapi-fork/
@@ -160,8 +160,8 @@ def _execute_command(command: str, timeout: int = 60) -> str:
         return f"Error executing command: {e}"
 
 
-def _get_gemini_client() -> AsyncOpenAI:
-    """Create a Gemini client via OpenAI-compatible API."""
+def _get_llm_client() -> AsyncOpenAI:
+    """Create LLM client via OpenAI-compatible API."""
     import httpx
     api_key = os.environ.get("GEMINI_API_KEY", "")
     if not api_key:
@@ -180,11 +180,11 @@ async def run_agent(
     max_turns: int = 20,
     model: str = "gemini-3-flash-preview",
 ) -> str:
-    """Run a Gemini agent with sandboxed bash tool access.
+    """Run an LLM agent with sandboxed bash tool access.
 
     Returns the final text response from the model.
     """
-    client = _get_gemini_client()
+    client = _get_llm_client()
 
     messages = [
         {"role": "system", "content": system_prompt},
@@ -200,13 +200,13 @@ async def run_agent(
                 temperature=0.1,
             )
         except Exception as e:
-            logger.error("Gemini API call failed on turn %d: %s", turn + 1, e)
+            logger.error("[%s] API call failed on turn %d: %s", model, turn + 1, e)
             raise
 
         choice = response.choices[0]
         message = choice.message
 
-        # Gemini rejects null values in message fields — strip them all
+        # Some APIs reject null values in message fields — strip them all
         msg_dict = {k: v for k, v in message.model_dump().items() if v is not None}
         if "content" not in msg_dict:
             msg_dict["content"] = ""
@@ -231,7 +231,7 @@ async def run_agent(
                 except json.JSONDecodeError:
                     command = tool_call.function.arguments
 
-                logger.debug("Gemini bash: %s", command[:120])
+                logger.debug("[%s] bash: %s", model, command[:120])
                 output = _execute_command(command)
 
                 messages.append({
@@ -259,7 +259,7 @@ async def run_completion(
     model: str = "gemini-2.5-flash",
 ) -> str:
     """Simple text completion — no tool use. For shadow analyzer."""
-    client = _get_gemini_client()
+    client = _get_llm_client()
 
     response = await client.chat.completions.create(
         model=model,

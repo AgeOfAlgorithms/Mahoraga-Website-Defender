@@ -22,12 +22,12 @@ const SINGLETON_AGENTS = [
 const SCALABLE_TYPES = {
   fixer: {
     label: "Fixer",
-    description: "GLM patches vulnerabilities",
+    description: "LLM patches vulnerabilities",
     systemPrompt: "You are a security engineer patching ONE specific vulnerability. Edit source files in crapi-fork/, then reload or rebuild. Sandboxed: only crapi-fork/ file access and docker exec into whitelisted containers.",
   },
   reviewer: {
     label: "Reviewer",
-    description: "GLM reviews patches",
+    description: "LLM reviews patches",
     systemPrompt: "You are a strict security reviewer. Check: 1) Does the patch fix the vulnerability? 2) New security issues? 3) Could it break functionality? 4) SCOPE CHECK: REJECT if it makes unrelated changes. Sandboxed: only docker exec verification.",
   },
 };

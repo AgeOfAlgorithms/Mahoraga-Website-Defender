@@ -1,6 +1,6 @@
 """Fixer agent — patches vulnerabilities by editing source in crapi-fork/.
 
-Uses Gemini with a sandboxed bash tool. The sandbox enforces:
+Uses LLM with a sandboxed bash tool. The sandbox enforces:
 - File access ONLY within crapi-fork/ (path validation, not just prompting)
 - docker exec only into whitelisted containers (for reloads)
 - docker compose rebuild for compiled services (Java/Go)
@@ -122,7 +122,7 @@ SYSTEM_PROMPT = (
     "markdown, no code fences — just the raw JSON object."
 )
 
-CODE_FIX_COST_ESTIMATE = 0.05  # GLM is much cheaper than Claude
+CODE_FIX_COST_ESTIMATE = 0.05
 
 
 class Fixer:
@@ -152,7 +152,7 @@ class Fixer:
                 break  # success
             except Exception as e:
                 logger.error(
-                    "Fixer GLM call failed for %s (attempt %d/%d): %s",
+                    "Fixer LLM call failed for %s (attempt %d/%d): %s",
                     triage.event_id, attempt + 1, max_retries, e,
                 )
                 if attempt < max_retries - 1:
