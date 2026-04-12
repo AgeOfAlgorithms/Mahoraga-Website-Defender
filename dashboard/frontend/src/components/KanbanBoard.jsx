@@ -48,7 +48,7 @@ export default function KanbanBoard({ events, audit, patches }) {
       const fixing = actions.includes("fixer_started");
       let status = "fixing";
       if (deployed) status = "resolved";
-      else if (reviewPassed || reviewRejected) status = "fix_reviewing";
+      else if (reviewRejected) status = "fixing";  // re-queued for retry
       else if (patchProposed) status = "fix_reviewing";
       else if (fixing) status = "fixing";
 
