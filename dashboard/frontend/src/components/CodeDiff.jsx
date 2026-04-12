@@ -42,7 +42,7 @@ export default function CodeDiff({ patches, audit }) {
               }`}
             >
               <div className="flex items-center justify-between">
-                <span className="text-xs font-mono text-gray-500">{p.patch_id || p.event_id}</span>
+                <span className="text-xs font-mono text-gray-500 truncate">{p.patch_id || p.event_id}</span>
                 <StatusBadge status={p.status} />
               </div>
               <div className="text-sm text-gray-300 mt-1 truncate">{p.description}</div>
@@ -55,7 +55,7 @@ export default function CodeDiff({ patches, audit }) {
       </div>
 
       {/* Patch detail */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden">
         {selectedPatch ? (
           <div className="p-4 space-y-4">
             {/* Header */}
@@ -196,7 +196,7 @@ function TimelineEntry({ entry }) {
         {new Date(entry.timestamp * 1000).toLocaleTimeString()}
       </span>
       <span className="text-gray-400 shrink-0 w-16 font-medium">{entry.agent}</span>
-      <span className="text-gray-300 break-words min-w-0">{entry.detail}</span>
+      <span className="text-gray-300 break-words min-w-0 overflow-hidden">{entry.detail}</span>
     </div>
   );
 }

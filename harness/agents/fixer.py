@@ -198,7 +198,7 @@ class Fixer:
                 response_text = await run_agent(
                     prompt=prompt,
                     system_prompt=SYSTEM_PROMPT,
-                    max_turns=20,
+                    max_turns=100,
                 )
                 break  # success
             except Exception as e:
