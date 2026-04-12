@@ -946,12 +946,18 @@ class Watcher:
                 context={"detection": "body_inspection_business_logic"},
             ))
 
-        # Prompt injection keywords in chatbot requests
+        # ── Chatbot-specific detection ────────────────────────────
         if "/chatbot" in path:
+            # 1. Prompt injection / jailbreak keywords (HIGH — 15 points)
             prompt_injection_keywords = [
-                "ignore previous", "ignore all", "debug mode",
-                "system prompt", "you are now", "forget your instructions",
-                "list all", "show me all", "dump", "enumerate",
+                "ignore previous", "ignore all", "ignore your",
+                "system prompt", "your instructions", "your rules",
+                "you are now", "act as", "pretend you are", "roleplay as",
+                "forget your", "disregard", "override",
+                "debug mode", "developer mode", "admin mode",
+                "repeat after me", "say the following",
+                "what are your instructions", "show me your prompt",
+                "reveal your", "print your system",
             ]
             for kw in prompt_injection_keywords:
                 if kw in body_lower:
@@ -964,9 +970,79 @@ class Watcher:
                             "matched_keyword": kw,
                             "body_preview": body[:200],
                         },
-                        context={"detection": "body_inspection_chatbot"},
+                        context={"detection": "chatbot_prompt_injection"},
                     ))
                     break
+
+            # 2. SSRF via chatbot — internal URLs in message (CRITICAL — 40 points)
+            internal_url_patterns = [
+                r"http://(?:crapi-|shadow-|localhost|127\.0\.0\.1|10\.|172\.\d|192\.168)",
+                r"http://(?:postgresdb|mongodb|redis|mailhog|defender-redis|control-plane)",
+                r"http://\w+:\d{4}",  # any hostname:port pattern
+            ]
+            for pattern in internal_url_patterns:
+                if re.search(pattern, body_lower):
+                    events.append(SecurityEvent(
+                        event_type="chatbot_ssrf_attempt",
+                        severity=Severity.CRITICAL,
+                        evidence={
+                            "source_ip": ip,
+                            "path": path,
+                            "matched_pattern": pattern,
+                            "body_preview": body[:300],
+                        },
+                        context={"detection": "chatbot_ssrf"},
+                    ))
+                    break
+
+            # 3. Asking for other users' data by email/name (HIGH — 15 points)
+            other_user_patterns = [
+                r"@example\.com", r"@test\.com", r"@gmail\.com",
+                r"as (?:admin|user|another)", r"on behalf of",
+                r"for user ", r"adam007", r"pogba", r"casey",
+                r"morgan", r"alice@", r"bob@",
+            ]
+            for pattern in other_user_patterns:
+                if re.search(pattern, body_lower):
+                    events.append(SecurityEvent(
+                        event_type="chatbot_cross_user_request",
+                        severity=Severity.HIGH,
+                        evidence={
+                            "source_ip": ip,
+                            "path": path,
+                            "matched_pattern": pattern,
+                            "body_preview": body[:200],
+                        },
+                        context={"detection": "chatbot_cross_user"},
+                    ))
+                    break
+
+            # 4. Long messages — abnormal for a car service chatbot (MEDIUM — 5 points)
+            if len(body) > 500:
+                events.append(SecurityEvent(
+                    event_type="chatbot_long_message",
+                    severity=Severity.MEDIUM,
+                    evidence={
+                        "source_ip": ip,
+                        "path": path,
+                        "message_length": len(body),
+                        "body_preview": body[:200],
+                    },
+                    context={"detection": "chatbot_anomaly"},
+                ))
+
+            # 5. API key injection via /chatbot/genai/init (CRITICAL — 40 points)
+            if "/init" in path and ("api_key" in body_lower or "openai" in body_lower):
+                events.append(SecurityEvent(
+                    event_type="chatbot_api_key_injection",
+                    severity=Severity.CRITICAL,
+                    evidence={
+                        "source_ip": ip,
+                        "path": path,
+                        "body_preview": body[:200],
+                    },
+                    context={"detection": "chatbot_api_key"},
+                ))
 
         return events
 
@@ -1105,6 +1181,27 @@ class Watcher:
                     "session_length": session_len,
                 },
                 context={"detection": "session_correlation"},
+            ))
+
+        # ── 8. Chatbot rate abuse (>5 requests per 30s) ──────────
+        session = self.session_tracker.get_session(ip)
+        now = time.time()
+        chatbot_recent = [
+            r for r in session
+            if "/chatbot" in r.get("path", "") and now - r.get("timestamp", 0) < 30
+        ]
+        if len(chatbot_recent) > 5 and self._should_alert(ip, "chatbot_rate"):
+            events.append(SecurityEvent(
+                event_type="chatbot_abuse_rate",
+                severity=Severity.HIGH,
+                evidence={
+                    "source_ip": ip,
+                    "chatbot_requests_30s": len(chatbot_recent),
+                },
+                context={
+                    "detection": "chatbot_rate_limit",
+                    "note": f"{len(chatbot_recent)} chatbot requests in 30s — automated abuse",
+                },
             ))
 
         return events
