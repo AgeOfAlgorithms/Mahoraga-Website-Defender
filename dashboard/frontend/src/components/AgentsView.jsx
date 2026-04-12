@@ -174,28 +174,6 @@ function AgentPanel({ agent, entries, status }) {
   );
 }
 
-function ScaleControl({ type, count, onScale }) {
-  return (
-    <div className="flex items-center gap-1">
-      <button
-        onClick={() => onScale(type, count - 1)}
-        disabled={count <= 1}
-        className="w-5 h-5 flex items-center justify-center rounded text-xs font-bold bg-gray-700 text-gray-300 hover:bg-gray-600 disabled:opacity-30 disabled:cursor-not-allowed"
-      >
-        -
-      </button>
-      <span className="text-xs text-gray-300 font-mono w-3 text-center">{count}</span>
-      <button
-        onClick={() => onScale(type, count + 1)}
-        disabled={count >= 3}
-        className="w-5 h-5 flex items-center justify-center rounded text-xs font-bold bg-gray-700 text-gray-300 hover:bg-gray-600 disabled:opacity-30 disabled:cursor-not-allowed"
-      >
-        +
-      </button>
-    </div>
-  );
-}
-
 export default function AgentsView({ audit }) {
   const [columns, setColumns] = useState(() => {
     return Number(localStorage.getItem("agents_columns")) || 2;
@@ -270,21 +248,38 @@ export default function AgentsView({ audit }) {
     <div className="h-full flex flex-col">
       {/* Toolbar */}
       <div className="flex items-center gap-4 px-4 py-2 bg-gray-900/50 border-b border-gray-800 shrink-0 flex-wrap">
-        {/* Singletons */}
+        {/* Singletons: Name o */}
         {SINGLETON_AGENTS.map(agent => (
           <div key={agent.id} className="flex items-center gap-1.5 text-xs">
-            <StatusDot status={statusByAgent[agent.id]} />
             <span className="text-gray-200">{agent.label}</span>
+            <StatusDot status={statusByAgent[agent.id]} />
           </div>
         ))}
 
-        {/* Scalable agents with +/- */}
-        {Object.entries(SCALABLE_TYPES).map(([type, meta]) => (
-          <div key={type} className="flex items-center gap-2 text-xs border-l border-gray-700 pl-3">
-            <span className="text-gray-200">{meta.label}</span>
-            <ScaleControl type={type} count={agentCounts[type] || 1} onScale={handleScale} />
-          </div>
-        ))}
+        {/* Scalable agents: [-] Name ooo [+] */}
+        {Object.entries(SCALABLE_TYPES).map(([type, meta]) => {
+          const count = agentCounts[type] || 1;
+          return (
+            <div key={type} className="flex items-center gap-1.5 text-xs border-l border-gray-700 pl-3">
+              <button
+                onClick={() => handleScale(type, count - 1)}
+                disabled={count <= 1}
+                className="w-5 h-5 flex items-center justify-center rounded text-xs font-bold bg-gray-700 text-gray-300 hover:bg-gray-600 disabled:opacity-30 disabled:cursor-not-allowed"
+              >-</button>
+              <span className="text-gray-200">{meta.label}</span>
+              <span className="flex items-center gap-0.5">
+                {Array.from({ length: count }, (_, i) => (
+                  <StatusDot key={i} status={statusByAgent[`${type}_${i + 1}`] || "idle"} />
+                ))}
+              </span>
+              <button
+                onClick={() => handleScale(type, count + 1)}
+                disabled={count >= 3}
+                className="w-5 h-5 flex items-center justify-center rounded text-xs font-bold bg-gray-700 text-gray-300 hover:bg-gray-600 disabled:opacity-30 disabled:cursor-not-allowed"
+              >+</button>
+            </div>
+          );
+        })}
 
         {/* Column count */}
         <div className="ml-auto flex items-center gap-1.5">
