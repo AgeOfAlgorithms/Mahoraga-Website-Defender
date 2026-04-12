@@ -85,6 +85,36 @@ function StatusDot({ status }) {
   return <span className="inline-flex rounded-full h-2.5 w-2.5 bg-gray-600" title="Idle" />;
 }
 
+function AgentLogEntry({ entry }) {
+  const [expanded, setExpanded] = useState(false);
+  const level = classifyLevel(entry);
+  const levelColor = LEVEL_COLORS[level] || LEVEL_COLORS.default;
+  const text = `${entry.action}${entry.detail ? " " + entry.detail : ""}`;
+
+  return (
+    <div
+      onClick={() => setExpanded(!expanded)}
+      className="px-2 py-0.5 hover:bg-gray-700/30 rounded cursor-pointer"
+    >
+      <div className="flex gap-2">
+        <span className="text-gray-600 shrink-0 w-16">{formatTime(entry.timestamp)}</span>
+        <span className={`shrink-0 w-16 uppercase text-[10px] leading-4 font-semibold ${levelColor}`}>{level}</span>
+        {expanded ? (
+          <span className="text-gray-300 whitespace-pre-wrap break-words min-w-0">
+            <span className="text-gray-500">{entry.action}</span>
+            {entry.detail && <span className="ml-1.5">{entry.detail}</span>}
+          </span>
+        ) : (
+          <span className="text-gray-300 truncate min-w-0">
+            <span className="text-gray-500">{entry.action}</span>
+            {entry.detail && <span className="ml-1.5">{entry.detail}</span>}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function AgentPanel({ agent, entries, status }) {
   const scrollRef = useRef(null);
   const isAtBottom = useRef(true);
@@ -140,20 +170,9 @@ function AgentPanel({ agent, entries, status }) {
           </div>
         ) : (
           <div className="p-1">
-            {entries.map((entry, idx) => {
-              const level = classifyLevel(entry);
-              const levelColor = LEVEL_COLORS[level] || LEVEL_COLORS.default;
-              return (
-                <div key={entry.event_id || idx} className="flex gap-2 px-2 py-0.5 hover:bg-gray-700/30 rounded">
-                  <span className="text-gray-600 shrink-0 w-16">{formatTime(entry.timestamp)}</span>
-                  <span className={`shrink-0 w-16 uppercase text-[10px] leading-4 font-semibold ${levelColor}`}>{level}</span>
-                  <span className="text-gray-300 break-all">
-                    <span className="text-gray-500">{entry.action}</span>
-                    {entry.detail && <span className="ml-1.5">{entry.detail}</span>}
-                  </span>
-                </div>
-              );
-            })}
+            {entries.map((entry, idx) => (
+              <AgentLogEntry key={entry.event_id || idx} entry={entry} />
+            ))}
           </div>
         )}
       </div>
