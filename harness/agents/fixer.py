@@ -28,8 +28,8 @@ logger = logging.getLogger(__name__)
 
 FIX_PROMPT = """\
 You are a security engineer patching ONE specific vulnerability in a web
-application. You edit source files directly in the crapi-fork/ directory,
-then reload or rebuild the affected service.
+application. You edit source files directly in the crapi-fork/ directory.
+Do NOT reload or rebuild services — that is handled automatically after review.
 
 ## Exploit Report (from shadow environment)
 {triage_json}
@@ -70,34 +70,19 @@ p.write_text(code)
 "
 ```
 
-## After patching — reload the service
-**Python (workshop):** hot-reload, no rebuild needed:
-  `docker exec crapi-workshop pkill -HUP -f gunicorn`
-  `docker exec shadow-workshop pkill -HUP -f gunicorn`
-
-**Java (identity):** must rebuild:
-  `docker compose up -d --build crapi-identity shadow-identity`
-
-**Go (community):** must rebuild:
-  `docker compose up -d --build crapi-community shadow-community`
-
-**Nginx:** reload config:
-  `docker exec nginx-proxy nginx -s reload`
-
 ## STRICT RULES
 1. Fix ONLY the vulnerability described above — NOTHING else
 2. Do NOT fix other bugs or vulnerabilities you notice
 3. Do NOT refactor, add comments, add type hints, or improve code quality
 4. Make the MINIMUM change necessary to close this vulnerability
 5. Be EFFICIENT — read only the file you need, make the fix, respond
-6. Always apply the fix to BOTH prod and shadow services
+6. Do NOT reload or rebuild any services — deployment is handled separately
 
 ## Your task
 1. Read the relevant source file in crapi-fork/
 2. Identify the exact lines that cause the vulnerability
 3. Edit ONLY those lines
-4. Reload/rebuild the affected service
-5. Respond with the JSON below
+4. Respond with the JSON below (do NOT run docker commands)
 
 ## Response format (JSON only, no markdown fencing)
 {{
@@ -114,7 +99,7 @@ p.write_text(code)
 SYSTEM_PROMPT = (
     "You are a security engineer. Fix ONLY the specific vulnerability "
     "described in the triage report. Edit source files directly in the "
-    "crapi-fork/ directory, then reload or rebuild the service. "
+    "crapi-fork/ directory. Do NOT reload or rebuild services. "
     "Be EFFICIENT — read only the file you need, make the minimal fix, "
     "and respond. Do not explore the codebase broadly. "
     "After applying the fix, your FINAL message must be ONLY a JSON "
