@@ -90,22 +90,24 @@ class Orchestrator:
         self._exploit_queue: asyncio.Queue[dict] = asyncio.Queue()
         self._review_queue: asyncio.Queue[tuple] = asyncio.Queue()  # (triage, patch)
 
-        # Dedup tracking — keyed on vulnerability description, not generic type
-        self._pending_vulns: set[str] = set()   # vuln descriptions currently queued
-        self._fixed_vulns: set[str] = set()     # vuln descriptions already patched
+        # Dedup tracking — keyed on type+endpoint (e.g. "ssrf|/mechanic/contact_mechanic")
+        # Same vuln type on different endpoints = different vulns
+        # Same vuln type on same endpoint detected multiple times = duplicate
+        self._pending_vulns: set[str] = set()   # currently queued/being fixed
+        self._fixed_vulns: set[str] = set()     # already patched + deployed
 
         # Restore fixed vulns from previous patches on disk
         for patch_file in self.patches_dir.glob("*.json"):
             try:
                 data = json.loads(patch_file.read_text())
-                # Use the analysis field which contains the specific vuln description
-                analysis = data.get("analysis", "")[:80]
-                if analysis:
-                    self._fixed_vulns.add(analysis)
+                dedup_key = data.get("_dedup_key", "")
+                if dedup_key:
+                    self._fixed_vulns.add(dedup_key)
             except (json.JSONDecodeError, OSError):
                 pass
         if self._fixed_vulns:
-            logger.info("Restored %d fixed vulns from disk", len(self._fixed_vulns))
+            logger.info("Restored %d fixed vulns from disk: %s",
+                        len(self._fixed_vulns), self._fixed_vulns)
 
         # Shadow LLM analyzer — generic exploit detection every 15s
         self.shadow_analyzer = ShadowAnalyzer(
@@ -302,32 +304,41 @@ class Orchestrator:
 
     async def _enqueue_exploit(self, attack: dict) -> None:
         """Called by ShadowAnalyzer — drops the exploit into the fixer queue.
-        Deduplicates by vulnerability type — no point fixing the same thing twice."""
-        import uuid
+        Deduplicates by type+endpoint — same vuln type on different endpoints
+        are treated as different vulnerabilities."""
+        import uuid, re
 
-        vuln_key = attack.get("vulnerability", "")[:80]
         exploit_type = attack.get("type", "unknown")
+        request_line = attack.get("request", "")
 
-        # Skip if we already fixed or are fixing this specific vulnerability
-        if vuln_key in self._fixed_vulns:
-            logger.debug("Skipping already-fixed vuln: %s", vuln_key[:50])
+        # Extract endpoint path from request line (e.g. "GET /workshop/api/mechanic/..." → "/mechanic/")
+        path_match = re.search(r'(?:GET|POST|PUT|DELETE|PATCH)\s+(\S+)', request_line)
+        endpoint = path_match.group(1) if path_match else ""
+        # Normalize: strip query params, keep first 3 path segments
+        endpoint = endpoint.split("?")[0]
+        parts = endpoint.strip("/").split("/")
+        endpoint = "/".join(parts[:4]) if parts else ""
+
+        dedup_key = f"{exploit_type}|{endpoint}"
+        attack["_dedup_key"] = dedup_key
+
+        if dedup_key in self._fixed_vulns:
+            logger.debug("Skipping already-fixed: %s", dedup_key)
             return
-        if vuln_key in self._pending_vulns:
-            logger.debug("Skipping duplicate queued vuln: %s", vuln_key[:50])
+        if dedup_key in self._pending_vulns:
+            logger.debug("Skipping duplicate queued: %s", dedup_key)
             return
 
-        # Assign event_id and emit audit NOW so kanban shows "Analyzing"
-        # while it waits in the queue for the fixer to pick it up
         event_id = f"shadow_{uuid.uuid4().hex[:8]}"
         attack["_event_id"] = event_id
-        request_line = attack.get("request", "")
+        vuln_key = attack.get("vulnerability", "")
         severity = attack.get("severity", "high")
 
         self._audit("shadow_exploit_detected", event_id, "shadow_analyzer",
                      f"type={exploit_type} severity={severity} "
                      f"vuln={vuln_key} request={request_line}")
 
-        self._pending_vulns.add(vuln_key)
+        self._pending_vulns.add(dedup_key)
         await self._exploit_queue.put(attack)
         logger.info(
             "Exploit queued for Fixer: type=%s severity=%s",
@@ -369,18 +380,20 @@ class Orchestrator:
         self._audit("fixer_started", event_id, agent_name,
                      f"Fixing{retry_label} {exploit_type}: {vuln}")
         patch = await self.fixer.generate_patch(triage, rejections=rejections)
+        dedup_key = attack.get("_dedup_key", f"{exploit_type}|unknown")
+
         if patch is None:
             self._audit("error", event_id, agent_name,
                          f"Patch generation failed for: {exploit_type}")
-            self._pending_vulns.discard(vuln[:80])
+            self._pending_vulns.discard(dedup_key)
             return
 
-        # Mark this specific vulnerability as fixed — don't re-fix
-        self._fixed_vulns.add(vuln[:80])
-        self._pending_vulns.discard(vuln[:80])
+        # Mark as fixed — don't re-fix
+        self._fixed_vulns.add(dedup_key)
+        self._pending_vulns.discard(dedup_key)
 
         # Save patch to disk so dashboard can display it
-        self._save_patch(patch, triage)
+        self._save_patch(patch, triage, dedup_key)
 
         self._audit("patch_proposed", event_id, agent_name,
                      f"exploit={exploit_type} files={patch.files_modified}")
@@ -394,7 +407,7 @@ class Orchestrator:
         """Reviewer handler — checks patch scope and functionality, then deploys."""
         triage, patch, attack = item
         event_id = triage.event_id
-        vuln = attack.get("vulnerability", "")
+        dedup_key = attack.get("_dedup_key", "")
 
         review = await self.reviewer.review(triage, patch)
         if review and not review.approved:
@@ -402,7 +415,7 @@ class Orchestrator:
                          f"Patch rejected: {review.issues}")
             logger.warning("Patch %s rejected: %s", patch.patch_id, review.issues)
             # Remove from fixed so it can be retried
-            self._fixed_vulns.discard(vuln[:80])
+            self._fixed_vulns.discard(dedup_key)
             # Attach rejection history so fixer knows what NOT to do
             prev_rejections = attack.get("_rejections", [])
             prev_rejections.append({
@@ -414,7 +427,7 @@ class Orchestrator:
             # Re-queue for fixer to try again
             await self._exploit_queue.put(attack)
             logger.info("Re-queued rejected vuln for fixer (attempt %d): %s",
-                        len(prev_rejections), vuln[:60])
+                        len(prev_rejections), dedup_key)
             return
 
         # Deploy: rebuild/reload affected services
@@ -526,13 +539,14 @@ class Orchestrator:
         except Exception as e:
             logger.error("Failed to score session for %s: %s", event.event_id, e)
 
-    def _save_patch(self, patch, triage) -> None:
+    def _save_patch(self, patch, triage, dedup_key: str = "") -> None:
         """Save patch record to disk for the dashboard."""
         from dataclasses import asdict
         patch_data = asdict(patch)
         patch_data["classification"] = triage.classification
         patch_data["severity"] = triage.severity.value
         patch_data["analysis"] = triage.analysis[:300]
+        patch_data["_dedup_key"] = dedup_key
         patch_file = self.patches_dir / f"{patch.patch_id}.json"
         patch_file.write_text(json.dumps(patch_data, indent=2, default=str))
 
