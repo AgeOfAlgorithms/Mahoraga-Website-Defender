@@ -33,26 +33,26 @@ export default function KanbanBoard({ events, audit, patches }) {
     }
 
     // Also add shadow exploits from audit as synthetic events
+    // Build shadow exploit cards, deduplicating by vuln description
+    // (same vuln can have multiple event_ids from retries)
     const shadowEvents = audit.filter(a => a.action === "shadow_exploit_detected");
+    const vulnMap = {}; // vuln description → best (most recent / highest status) event
+
     for (const a of shadowEvents) {
-      // Determine pipeline stage from audit trail
       const actions = audit
         .filter(aa => aa.event_id === a.event_id)
         .map(aa => aa.action);
       const deployed = actions.includes("deployed");
-      const testFailed = actions.includes("test_failed");
-      const reviewPassed = actions.includes("review_passed");
       const reviewRejected = actions.includes("review_rejected");
       const patchProposed = actions.includes("patch_proposed");
-
       const fixing = actions.includes("fixer_started");
+
       let status = "fixing";
       if (deployed) status = "resolved";
-      else if (reviewRejected) status = "fixing";  // re-queued for retry
+      else if (reviewRejected) status = "fixing";
       else if (patchProposed) status = "fix_reviewing";
       else if (fixing) status = "fixing";
 
-      // Determine if actively being worked on right now
       const eventAudit = audit.filter(aa => aa.event_id === a.event_id);
       const lastAction = eventAudit.length > 0
         ? eventAudit.reduce((a, b) => (a.timestamp || 0) > (b.timestamp || 0) ? a : b)
@@ -62,23 +62,35 @@ export default function KanbanBoard({ events, audit, patches }) {
         (status === "fix_reviewing" && lastAction.action === "patch_proposed")
       );
 
-      const synthEvent = {
-        event_id: a.event_id,
-        event_type: `shadow: ${a.detail?.match(/type=(\S+)/)?.[1] || "unknown"}`,
-        severity: a.detail?.match(/severity=(\S+)/)?.[1] || "high",
-        timestamp: a.timestamp,
-        source: "shadow_analyzer",
-        status,
-        evidence: { detail: a.detail },
-        _shadow: true,
-        _active: isActive,
-      };
+      // Extract vuln description for dedup
+      const vulnDesc = a.detail?.match(/vuln=(.+?)(?:\s+request=|$)/)?.[1] || a.event_id;
+      const statusRank = { resolved: 3, fix_reviewing: 2, fixing: 1 };
 
-      if (grouped[status]) {
-        // Avoid duplicates
-        if (!grouped[status].some(e => e.event_id === synthEvent.event_id)) {
-          grouped[status].push(synthEvent);
-        }
+      const existing = vulnMap[vulnDesc];
+      const thisRank = statusRank[status] || 0;
+      const existingRank = existing ? (statusRank[existing.status] || 0) : -1;
+
+      // Keep the most advanced pipeline stage, or most recent if same stage
+      if (!existing || thisRank > existingRank ||
+          (thisRank === existingRank && (a.timestamp || 0) > (existing.timestamp || 0))) {
+        vulnMap[vulnDesc] = {
+          event_id: a.event_id,
+          event_type: `shadow: ${a.detail?.match(/type=(\S+)/)?.[1] || "unknown"}`,
+          severity: a.detail?.match(/severity=(\S+)/)?.[1] || "high",
+          timestamp: a.timestamp,
+          source: "shadow_analyzer",
+          status,
+          evidence: { detail: a.detail },
+          _shadow: true,
+          _active: isActive,
+        };
+      }
+    }
+
+    // Add deduplicated events to columns
+    for (const synthEvent of Object.values(vulnMap)) {
+      if (grouped[synthEvent.status]) {
+        grouped[synthEvent.status].push(synthEvent);
       }
     }
 
