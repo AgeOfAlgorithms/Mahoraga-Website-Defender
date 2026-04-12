@@ -364,9 +364,11 @@ class Orchestrator:
             approval_policy=ApprovalPolicy.AUTO_APPLY_NOTIFY,
         )
 
+        rejections = attack.get("_rejections", [])
+        retry_label = f" (retry #{len(rejections)})" if rejections else ""
         self._audit("fixer_started", event_id, agent_name,
-                     f"Fixing {exploit_type}: {vuln}")
-        patch = await self.fixer.generate_patch(triage)
+                     f"Fixing{retry_label} {exploit_type}: {vuln}")
+        patch = await self.fixer.generate_patch(triage, rejections=rejections)
         if patch is None:
             self._audit("error", event_id, agent_name,
                          f"Patch generation failed for: {exploit_type}")
@@ -401,9 +403,18 @@ class Orchestrator:
             logger.warning("Patch %s rejected: %s", patch.patch_id, review.issues)
             # Remove from fixed so it can be retried
             self._fixed_vulns.discard(vuln[:80])
+            # Attach rejection history so fixer knows what NOT to do
+            prev_rejections = attack.get("_rejections", [])
+            prev_rejections.append({
+                "patch_description": patch.description,
+                "issues": review.issues,
+                "suggestion": review.suggestion if hasattr(review, 'suggestion') else "",
+            })
+            attack["_rejections"] = prev_rejections
             # Re-queue for fixer to try again
             await self._exploit_queue.put(attack)
-            logger.info("Re-queued rejected vuln for fixer: %s", vuln[:60])
+            logger.info("Re-queued rejected vuln for fixer (attempt %d): %s",
+                        len(prev_rejections), vuln[:60])
             return
 
         # Deploy: rebuild/reload affected services

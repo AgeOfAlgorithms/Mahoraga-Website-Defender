@@ -71,6 +71,9 @@ export default function KanbanBoard({ events, audit, patches }) {
       const existingRank = existing ? (statusRank[existing.status] || 0) : -1;
 
       // Keep the most advanced pipeline stage, or most recent if same stage
+      // Count rejections for this event
+      const rejectionCount = actions.filter(a => a === "review_rejected").length;
+
       if (!existing || thisRank > existingRank ||
           (thisRank === existingRank && (a.timestamp || 0) > (existing.timestamp || 0))) {
         vulnMap[vulnDesc] = {
@@ -82,6 +85,7 @@ export default function KanbanBoard({ events, audit, patches }) {
           status,
           evidence: { detail: a.detail },
           _shadow: true,
+          _retryCount: rejectionCount,
           _active: isActive,
         };
       }
@@ -149,8 +153,13 @@ export default function KanbanBoard({ events, audit, patches }) {
                   <div className="mt-1 text-xs text-gray-300 font-medium truncate">
                     {evt.event_type}
                   </div>
-                  {evt._shadow && !evt._active && (
+                  {evt._shadow && !evt._active && !evt._retryCount && (
                     <span className="text-[9px] text-purple-400 mt-0.5 block">via shadow analyzer</span>
+                  )}
+                  {evt._retryCount > 0 && !evt._active && (
+                    <span className="text-[9px] text-red-400 mt-0.5 block">
+                      retry #{evt._retryCount} — previously rejected
+                    </span>
                   )}
                   {evt._active && (
                     <span className="text-[9px] text-amber-400 mt-0.5 flex items-center gap-1">

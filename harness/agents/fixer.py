@@ -167,7 +167,7 @@ class Fixer:
                     return f"# File: crapi-fork/{rel_path}\n{numbered}"
         return ""
 
-    async def generate_patch(self, triage: TriageResult) -> PatchProposal | None:
+    async def generate_patch(self, triage: TriageResult, rejections: list = None) -> PatchProposal | None:
         """Generate and apply a patch inside running containers."""
         if not self.cost_governor.can_spend(triage.event_id, CODE_FIX_COST_ESTIMATE):
             logger.warning("Budget exceeded, cannot patch for %s", triage.event_id)
@@ -180,6 +180,16 @@ class Fixer:
         prompt = FIX_PROMPT.format(triage_json=triage_json)
         if source_context:
             prompt += f"\n\n## Source code (pre-loaded for efficiency — edit this file)\n```\n{source_context}\n```"
+
+        # Include rejection history so the LLM tries a different approach
+        if rejections:
+            prompt += "\n\n## PREVIOUS ATTEMPTS REJECTED — do NOT repeat these\n"
+            for i, rej in enumerate(rejections, 1):
+                prompt += f"### Attempt {i}: {rej.get('patch_description', '')}\n"
+                prompt += f"Rejected because: {rej.get('issues', [])}\n"
+                if rej.get('suggestion'):
+                    prompt += f"Reviewer suggestion: {rej['suggestion']}\n"
+            prompt += "\nYou MUST try a DIFFERENT approach this time.\n"
 
         max_retries = 3
         response_text = ""
