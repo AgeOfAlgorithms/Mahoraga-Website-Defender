@@ -178,7 +178,7 @@ async def run_agent(
     prompt: str,
     system_prompt: str,
     max_turns: int = 20,
-    model: str = "gemini-2.5-flash",
+    model: str = "gemini-3-flash-preview",
 ) -> str:
     """Run a Gemini agent with sandboxed bash tool access.
 
