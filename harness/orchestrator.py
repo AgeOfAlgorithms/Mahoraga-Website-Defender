@@ -383,21 +383,27 @@ class Orchestrator:
         self._audit("patch_proposed", event_id, agent_name,
                      f"exploit={exploit_type} files={patch.files_modified}")
 
-        # Hand off to reviewer
-        await self._review_queue.put((triage, patch))
+        # Hand off to reviewer (include original attack for re-queue on rejection)
+        await self._review_queue.put((triage, patch, attack))
 
     # ── Reviewer agent ───────────────────────────────────────────
 
     async def _run_reviewer(self, item: tuple) -> None:
         """Reviewer handler — checks patch scope and functionality, then deploys."""
-        triage, patch = item
+        triage, patch, attack = item
         event_id = triage.event_id
+        vuln = attack.get("vulnerability", "")
 
         review = await self.reviewer.review(triage, patch)
         if review and not review.approved:
             self._audit("review_rejected", event_id, "reviewer",
                          f"Patch rejected: {review.issues}")
             logger.warning("Patch %s rejected: %s", patch.patch_id, review.issues)
+            # Remove from fixed so it can be retried
+            self._fixed_vulns.discard(vuln[:80])
+            # Re-queue for fixer to try again
+            await self._exploit_queue.put(attack)
+            logger.info("Re-queued rejected vuln for fixer: %s", vuln[:60])
             return
 
         # Deploy: rebuild/reload affected services
