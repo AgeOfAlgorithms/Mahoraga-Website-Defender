@@ -85,6 +85,26 @@ function StatusDot({ status }) {
   return <span className="inline-flex rounded-full h-2.5 w-2.5 bg-gray-600" title="Idle" />;
 }
 
+function AgentLogEntry({ entry }) {
+  const [open, setOpen] = useState(false);
+  const level = classifyLevel(entry);
+  const levelColor = LEVEL_COLORS[level] || LEVEL_COLORS.default;
+
+  return (
+    <div
+      onClick={() => setOpen(!open)}
+      className="flex gap-2 px-2 py-0.5 hover:bg-gray-700/30 rounded cursor-pointer"
+    >
+      <span className="text-gray-600 shrink-0 w-16">{formatTime(entry.timestamp)}</span>
+      <span className={`shrink-0 w-16 uppercase text-[10px] leading-4 font-semibold ${levelColor}`}>{level}</span>
+      <span className={`text-gray-300 min-w-0 ${open ? "break-words" : "truncate"}`}>
+        <span className="text-gray-500">{entry.action}</span>
+        {entry.detail && <span className="ml-1.5">{entry.detail}</span>}
+      </span>
+    </div>
+  );
+}
+
 function AgentPanel({ agent, entries, status }) {
   const scrollRef = useRef(null);
   const isAtBottom = useRef(true);
@@ -140,20 +160,9 @@ function AgentPanel({ agent, entries, status }) {
           </div>
         ) : (
           <div className="p-1">
-            {entries.map((entry, idx) => {
-              const level = classifyLevel(entry);
-              const levelColor = LEVEL_COLORS[level] || LEVEL_COLORS.default;
-              return (
-                <div key={entry.event_id || idx} className="flex gap-2 px-2 py-0.5 hover:bg-gray-700/30 rounded">
-                  <span className="text-gray-600 shrink-0 w-16">{formatTime(entry.timestamp)}</span>
-                  <span className={`shrink-0 w-16 uppercase text-[10px] leading-4 font-semibold ${levelColor}`}>{level}</span>
-                  <span className="text-gray-300 break-words min-w-0">
-                    <span className="text-gray-500">{entry.action}</span>
-                    {entry.detail && <span className="ml-1.5">{entry.detail}</span>}
-                  </span>
-                </div>
-              );
-            })}
+            {entries.map((entry, idx) => (
+              <AgentLogEntry key={entry.event_id || idx} entry={entry} />
+            ))}
           </div>
         )}
       </div>
