@@ -62,8 +62,9 @@ export default function KanbanBoard({ events, audit, patches }) {
         (status === "fix_reviewing" && lastAction.action === "patch_proposed")
       );
 
-      // Extract vuln description for dedup
-      const vulnDesc = a.detail?.match(/vuln=(.+?)(?:\s+request=|$)/)?.[1] || a.event_id;
+      // Dedup by exploit type (e.g. "ssrf", "business_logic") — not full description
+      // which varies between retries
+      const vulnDesc = a.detail?.match(/type=(\S+)/)?.[1] || a.event_id;
       const statusRank = { resolved: 3, fix_reviewing: 2, fixing: 1 };
 
       const existing = vulnMap[vulnDesc];
