@@ -189,8 +189,8 @@ class ShadowAnalyzer:
         # Truncate long fields (JWTs, response bodies) to reduce prompt size
         def _truncate_entry(line: str) -> str:
             import re
-            # Shorten JWT tokens to first 30 chars + ...
-            line = re.sub(r'(eyJ[A-Za-z0-9_-]{30})[A-Za-z0-9_-]+\.([A-Za-z0-9_-]{30})[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*', r'\1...\2...', line)
+            # Shorten JWT tokens to first 20 chars + ...
+            line = re.sub(r'(eyJ[A-Za-z0-9_-]{17})[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*', r'\1...', line)
             # Shorten very long resp_body (keep first 300 chars)
             m = re.search(r'resp_body="(.{300,})"', line)
             if m:

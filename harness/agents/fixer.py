@@ -128,8 +128,44 @@ CODE_FIX_COST_ESTIMATE = 0.05
 class Fixer:
     """Patches vulnerabilities inside running containers via docker exec."""
 
+    # Map request paths / vuln keywords to source files
+    PATH_TO_SOURCE = {
+        "/shop/": "services/workshop/crapi/shop/views.py",
+        "/mechanic/": "services/workshop/crapi/mechanic/views.py",
+        "/merchant/": "services/workshop/crapi/merchant/views.py",
+        "/management/": "services/workshop/crapi/user/views.py",
+        "api_key": "services/workshop/crapi/user/views.py",
+        "fleet": "services/workshop/crapi/user/views.py",
+        "jwt": "services/workshop/utils/jwt.py",
+        "alg:none": "services/workshop/utils/jwt.py",
+        "ssrf": "services/workshop/crapi/mechanic/views.py",
+        "contact_mechanic": "services/workshop/crapi/mechanic/views.py",
+        "coupon": "services/workshop/crapi/shop/views.py",
+        "order": "services/workshop/crapi/shop/views.py",
+        "quantity": "services/workshop/crapi/shop/views.py",
+    }
+
     def __init__(self, cost_governor: CostGovernor):
         self.cost_governor = cost_governor
+
+    def _pre_read_source(self, triage) -> str:
+        """Try to pre-read the relevant source file based on the exploit details."""
+        from pathlib import Path
+        analysis = (triage.analysis + " " + triage.recommended_action).lower()
+
+        for keyword, rel_path in self.PATH_TO_SOURCE.items():
+            if keyword.lower() in analysis:
+                full_path = Path("crapi-fork") / rel_path
+                if full_path.exists():
+                    content = full_path.read_text()
+                    # Add line numbers
+                    lines = content.split("\n")
+                    numbered = "\n".join(f"{i+1:4d} | {line}" for i, line in enumerate(lines))
+                    # Truncate if too long
+                    if len(numbered) > 6000:
+                        numbered = numbered[:6000] + "\n... (truncated)"
+                    return f"# File: crapi-fork/{rel_path}\n{numbered}"
+        return ""
 
     async def generate_patch(self, triage: TriageResult) -> PatchProposal | None:
         """Generate and apply a patch inside running containers."""
@@ -138,7 +174,12 @@ class Fixer:
             return None
 
         triage_json = json.dumps(asdict(triage), indent=2, default=str)
+
+        # Pre-read the likely source file so the LLM doesn't waste turns exploring
+        source_context = self._pre_read_source(triage)
         prompt = FIX_PROMPT.format(triage_json=triage_json)
+        if source_context:
+            prompt += f"\n\n## Source code (pre-loaded for efficiency — edit this file)\n```\n{source_context}\n```"
 
         max_retries = 3
         response_text = ""
