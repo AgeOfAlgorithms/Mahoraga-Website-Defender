@@ -23,7 +23,7 @@ class CostGovernor:
     _incident_spend: dict[str, float] = field(default_factory=dict, repr=False)
     _hourly_calls: list[float] = field(default_factory=list, repr=False)
     _day_start: float = field(default_factory=time.time, repr=False)
-    _baseline_hourly_spend: float = field(default=2.0, repr=False)
+    _baseline_hourly_spend: float = field(default=10.0, repr=False)
     _paused: bool = field(default=False, repr=False)
     _ledger_path: Path | None = field(default=None, repr=False)
 

@@ -535,10 +535,12 @@ class Watcher:
             # 4. Session-level analysis (cross-request correlation)
             events.extend(self._check_session_patterns(ip, path))
 
-        # Ensure all events have user_agent in evidence (for fingerprint matching)
+        # Ensure all events have user_agent and path in evidence
         for event in events:
             if "source_ip" in event.evidence and "user_agent" not in event.evidence:
                 event.evidence["user_agent"] = ua
+            if "source_ip" in event.evidence and "path" not in event.evidence:
+                event.evidence["path"] = path
 
         # Deduplicate: one event per type per IP per scan cycle
         seen = set()

@@ -65,10 +65,10 @@ SEVERITY_POINTS = {
 
 # Score TTL by severity — how long before a score decays
 SEVERITY_TTL = {
-    "critical": 120,   # 2 minutes
-    "high": 60,        # 1 minute
-    "medium": 30,      # 1 minute
-    "low": 15,         # 1 minute
+    "critical": 300,   # 5 minutes
+    "high": 300,       # 5 minutes
+    "medium": 300,     # 5 minutes
+    "low": 120,        # 2 minutes
 }
 
 SHADOW_REDIRECT_TTL = 300  # 5 minutes — how long a redirect persists

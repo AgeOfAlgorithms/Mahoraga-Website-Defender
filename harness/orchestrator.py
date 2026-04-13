@@ -102,23 +102,34 @@ class Orchestrator:
         self._stale_tickets: list = []           # tickets to re-enqueue on startup
 
         # Restore dedup state from pipeline tickets on disk
-        # Reset stale fixing/reviewing tickets back to detected (queue was lost on restart)
+        # Reset stale fixing/reviewing tickets back to queued (queue was lost on restart)
         for ticket_file in self.pipeline_dir.glob("*.json"):
             try:
                 ticket = PipelineTicket.load(ticket_file)
-                if ticket.dedup_key:
-                    if ticket.status == TicketStatus.DEPLOYED.value:
+                # Deployed tickets: mark as fixed, never re-enqueue
+                if ticket.status == TicketStatus.DEPLOYED.value:
+                    if ticket.dedup_key:
                         self._fixed_vulns.add(ticket.dedup_key)
-                    elif ticket.status in (TicketStatus.QUEUED.value, TicketStatus.FIXING.value,
-                                           TicketStatus.PENDING_REVIEW.value, TicketStatus.REVIEWING.value):
-                        # Queue was lost — reset and re-enqueue
-                        ticket.status = TicketStatus.QUEUED.value
-                        ticket.agent = ""
-                        ticket.save(self.pipeline_dir)
+                    continue
+                # Detected tickets: leave as-is (watcher events, not in pipeline)
+                if ticket.status == TicketStatus.DETECTED.value:
+                    continue
+                # In-progress tickets: queue was lost on restart, re-enqueue
+                if ticket.status in (TicketStatus.QUEUED.value, TicketStatus.FIXING.value,
+                                     TicketStatus.PENDING_REVIEW.value, TicketStatus.REVIEWING.value):
+                    if not ticket.type:
+                        # Orphan ticket with no type — can't be fixed, delete it
+                        ticket_file.unlink()
+                        logger.info("Deleted orphan ticket %s (no type)", ticket.id)
+                        continue
+                    ticket.status = TicketStatus.QUEUED.value
+                    ticket.agent = ""
+                    ticket.save(self.pipeline_dir)
+                    if ticket.dedup_key:
                         self._pending_vulns.add(ticket.dedup_key)
-                        self._stale_tickets.append(ticket)
-                        logger.info("Reset stale ticket %s (%s) — will re-enqueue",
-                                    ticket.id, ticket.type)
+                    self._stale_tickets.append(ticket)
+                    logger.info("Reset stale ticket %s (%s) — will re-enqueue",
+                                ticket.id, ticket.type)
             except Exception:
                 pass
         # Also check patches dir for backward compat
@@ -256,6 +267,20 @@ class Orchestrator:
                 self._agent_tasks[name].cancel()
                 del self._agent_tasks[name]
                 logger.info("Stopped agent: %s", name)
+                # Reset any tickets this agent was working on back to queued
+                for ticket_file in self.pipeline_dir.glob("*.json"):
+                    try:
+                        ticket = PipelineTicket.load(ticket_file)
+                        if ticket.agent == name and ticket.status in (
+                            TicketStatus.FIXING.value, TicketStatus.REVIEWING.value
+                        ):
+                            was_fixing = ticket.status == TicketStatus.FIXING.value
+                            ticket.status = TicketStatus.QUEUED.value if was_fixing else TicketStatus.PENDING_REVIEW.value
+                            ticket.agent = ""
+                            ticket.save(self.pipeline_dir)
+                            logger.info("Reset ticket %s from cancelled agent %s", ticket.id, name)
+                    except Exception:
+                        pass
 
         self._current_counts[agent_type] = desired
 
@@ -378,11 +403,12 @@ class Orchestrator:
         self._audit("event_recorded", event.event_id, "orchestrator",
                      f"{event.event_type} [{event.severity.value}]")
 
-    async def _on_analyzer_cycle(self, n_entries: int, n_attacks: int) -> None:
+    async def _on_analyzer_cycle(self, n_entries: int, n_attacks: int, attacks: list = None) -> None:
         """Called after each shadow analyzer cycle."""
         if n_attacks > 0:
+            types = [f"{a.get('type', '?')}({a.get('severity', '?')})" for a in (attacks or [])]
             self._audit("shadow_analysis_complete", "system", "shadow_analyzer",
-                         f"Analyzed {n_entries} entries — {n_attacks} exploit(s) detected")
+                         f"Analyzed {n_entries} entries — {n_attacks} exploit(s): {', '.join(types)}")
         else:
             self._audit("shadow_analysis_complete", "system", "shadow_analyzer",
                          f"Analyzed {n_entries} entries — no exploits detected")
@@ -471,11 +497,28 @@ class Orchestrator:
         )
 
         rejections = attack.get("_rejections", [])
+        # Clear any stale tickets still assigned to this agent from a previous run
+        for tf in self.pipeline_dir.glob("*.json"):
+            try:
+                t = PipelineTicket.load(tf)
+                if t.agent == agent_name and t.id != event_id and t.status == TicketStatus.FIXING.value:
+                    t.status = TicketStatus.QUEUED.value
+                    t.agent = ""
+                    t.save(self.pipeline_dir)
+                    logger.info("Cleared stale fixing ticket %s from %s", t.id, agent_name)
+            except Exception:
+                pass
+
+        rejections = attack.get("_rejections", [])
         retry_label = f" (retry #{len(rejections)})" if rejections else ""
         self._audit("fixer_started", event_id, agent_name,
                      f"Fixing{retry_label} {exploit_type}: {vuln}")
+        endpoint = attack.get("_dedup_key", "").split("|", 1)[-1] if "|" in attack.get("_dedup_key", "") else ""
         self._update_ticket(event_id, status=TicketStatus.FIXING.value,
-                            agent=agent_name, retry_count=len(rejections))
+                            agent=agent_name, retry_count=len(rejections),
+                            type=exploit_type, severity=severity,
+                            endpoint=endpoint,
+                            evidence=f"type={exploit_type} severity={severity} vuln={vuln}")
         def _on_tool(cmd):
             self._audit("tool_call", event_id, agent_name, cmd)
 
@@ -534,6 +577,18 @@ class Orchestrator:
         triage, patch, attack = item
         event_id = triage.event_id
         dedup_key = attack.get("_dedup_key", "")
+
+        # Clear any stale tickets still assigned to reviewer from a previous run
+        for tf in self.pipeline_dir.glob("*.json"):
+            try:
+                t = PipelineTicket.load(tf)
+                if t.agent == "reviewer" and t.id != event_id and t.status == TicketStatus.REVIEWING.value:
+                    t.status = TicketStatus.PENDING_REVIEW.value
+                    t.agent = ""
+                    t.save(self.pipeline_dir)
+                    logger.info("Cleared stale reviewing ticket %s from reviewer", t.id)
+            except Exception:
+                pass
 
         self._update_ticket(event_id, status=TicketStatus.REVIEWING.value, agent="reviewer")
 

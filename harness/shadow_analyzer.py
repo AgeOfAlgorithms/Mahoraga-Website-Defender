@@ -94,7 +94,7 @@ class ShadowAnalyzer:
         self.cost_governor = cost_governor
         self.interval = interval
         self.on_exploit_detected = on_exploit_detected  # callback
-        self.on_cycle_complete = on_cycle_complete      # callback(n_new, n_attacks)
+        self.on_cycle_complete = on_cycle_complete      # callback(n_new, n_attacks, attacks)
         self.max_new_entries = max_new_entries
         self.max_context_entries = max_context_entries
         self.early_trigger_lines = max_new_entries - max_context_entries
@@ -297,12 +297,12 @@ class ShadowAnalyzer:
                 result.get("total_requests_analyzed", len(entries)),
             )
             if self.on_cycle_complete:
-                await self.on_cycle_complete(n_new, 0)
+                await self.on_cycle_complete(n_new, 0, [])
             return True
 
         # Exploits detected!
         if self.on_cycle_complete:
-            await self.on_cycle_complete(n_new, len(attacks))
+            await self.on_cycle_complete(n_new, len(attacks), attacks)
 
         for attack in attacks:
             logger.warning(

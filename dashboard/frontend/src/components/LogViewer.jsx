@@ -1,5 +1,8 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 
+const SEVERITY_RANK = { critical: 4, high: 3, medium: 2, low: 1, info: 0 };
+function severityRank(sev) { return SEVERITY_RANK[(sev || "").toLowerCase()] || 0; }
+
 const SEVERITY_COLORS = {
   critical: "bg-red-900/60 border-l-4 border-red-500",
   high: "bg-orange-900/40 border-l-4 border-orange-500",
@@ -68,9 +71,12 @@ export default function LogViewer({ prodLogs, shadowLogs, watcherPaths, events, 
   const eventsByPath = useMemo(() => {
     const map = {};
     for (const evt of events) {
-      const path = evt.evidence?.request_path;
+      const path = evt.evidence?.path || evt.evidence?.request_path;
       if (path) {
-        map[path] = evt;
+        // Keep the highest severity event per path
+        if (!map[path] || severityRank(evt.severity) > severityRank(map[path].severity)) {
+          map[path] = evt;
+        }
       }
     }
     return map;

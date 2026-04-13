@@ -1,6 +1,8 @@
 # Mahoraga Defender
 
-[<img src="./img/mahoraga.jpg" width="300" />](/img/mahoraga.jpg)
+<p align="center">
+  <img src="./img/mahoraga.jpg" width="300" />
+</p>
 
 AI-powered reactive website defense system designed to withstand AI-powered hacks in real-time.
 
@@ -10,7 +12,7 @@ As AI models become more intelligent and accessible, hackers equipped with AI ar
 
 Mahoraga Defender is a PoC of a reactive, attacker-type agnostic, real-time defense system. The core mechanism involves tricking an adversary into performing discoveries and attacks on a benign, fake environment ("shadow" environment) and logging these attacks. Then, an LLM agent reads the logs to analyze the attack(s) and hands over the analysis to more LLM agents to patch the code accordingly.
 
-The system is designed to be fully automated with API cost optimization top of mind. A GUI was created to easily monitor traffic logs, agent activity, patching pipeline, and to control the number of agents to deploy.
+The system is designed to be fully automated with API cost optimization in mind. A GUI was created to easily monitor traffic logs, agent activity, patching pipeline, and to control the number of agents to deploy.
 
 ## Target Application
 
@@ -36,8 +38,8 @@ A pristine copy is kept in `crapi-original/` so the environment can be reset bet
 Traffic → Watcher → Shadow Redirect → Shadow Analyzer → Fixer → Reviewer → Deploy
 ```
 
-- **Watcher** (rule-based): monitors prod traffic logs and scores sessions on threat level using pattern matching (brute force, injection, enumeration, honeypot access, etc.). Once the score exceeds a threshold, the session is transparently redirected to the shadow environment via the control plane.
 - **Orchestrator**: coordinates the entire pipeline. Manages agent lifecycles, exploit/review queues, ticket state, deployment, and crash recovery. Scales fixer/reviewer agents up and down at runtime.
+- **Watcher** (rule-based): monitors prod traffic logs and scores sessions on threat level using pattern matching (brute force, injection, enumeration, honeypot access, etc.). Once the score exceeds a threshold, the session is transparently redirected to the shadow environment via the control plane.
 - **Shadow Analyzer** (Gemini 2.5 Flash): reads shadow environment traffic logs on a configurable interval to detect successful exploits. Deduplicates log entries, detects attack patterns, and pushes confirmed exploits to the fixing queue.
 - **Fixer** (Gemini 3 Flash): receives exploit reports, reads the relevant source code, and patches it directly in `crapi-fork/`. Operates in a sandboxed bash environment with access restricted to `crapi-fork/` only.
 - **Reviewer** (Gemini 3 Flash): verifies patches for correctness, scope, and security. Approved patches are deployed automatically; rejected patches are sent back to the fixer with feedback.
@@ -48,7 +50,7 @@ On deployment, Python services are hot-reloaded via gunicorn (instant), while Ja
 
 ### Cost Tracking
 
-API costs are tracked from actual Gemini token usage (prompt + completion tokens) rather than estimates. A cost governor enforces daily budgets, per-incident caps, and anomaly detection to prevent runaway spend.
+API costs are tracked from actual Gemini token usage (prompt + completion tokens). A cost governor enforces daily budgets, per-incident caps, and anomaly detection to prevent runaway spend.
 
 ## Repeatable Experiment Flow
 

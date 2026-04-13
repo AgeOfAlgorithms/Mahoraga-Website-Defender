@@ -195,7 +195,7 @@ class Fixer:
                 prompt += f"Rejected because: {rej.get('issues', [])}\n"
                 if rej.get('suggestion'):
                     prompt += f"Reviewer suggestion: {rej['suggestion']}\n"
-            prompt += "\nYou MUST try a DIFFERENT approach this time.\n"
+            prompt += "\nTry a different approach this time.\n"
 
         if on_prompt_built:
             on_prompt_built(SYSTEM_PROMPT, prompt)

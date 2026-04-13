@@ -26,7 +26,7 @@ class ControlPlaneClient:
         token: str = "", ja3: str = "", points: int = 0,
     ) -> dict:
         """Add threat score to a session. May trigger shadow redirect."""
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(5.0)) as client:
             resp = await client.post(
                 f"{self.base_url}/control/session/score",
                 json={
@@ -49,16 +49,16 @@ class ControlPlaneClient:
     # ── Status ────────────────────────────────────────────────────
 
     async def get_session_score(self, token: str) -> dict:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(5.0)) as client:
             resp = await client.get(f"{self.base_url}/control/session/score/{token}")
             return resp.json()
 
     async def get_shadow_status(self) -> dict:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(5.0)) as client:
             resp = await client.get(f"{self.base_url}/control/shadow/status")
             return resp.json()
 
     async def get_status(self) -> dict:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(5.0)) as client:
             resp = await client.get(f"{self.base_url}/control/status")
             return resp.json()
