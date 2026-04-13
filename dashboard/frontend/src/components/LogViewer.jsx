@@ -36,11 +36,11 @@ const HTTP_STATUS_NAMES = {
   500: "Server Error", 502: "Bad Gateway", 503: "Service Unavailable",
 };
 
-export default function LogViewer({ prodLogs, shadowLogs, watcherPaths, analyzerTypes, events, audit, shadowSessionCount = 0 }) {
+export default function LogViewer({ prodLogs, shadowLogs, watcherPaths, events, audit, shadowSessionCount = 0 }) {
   const [expanded, setExpanded] = useState(new Set());
   const [autoScroll, setAutoScroll] = useState(true);
   const [filter, setFilter] = useState("");
-  const scrollRef = useRef(null);
+
 
   // Merge all logs, tag shadow-only logs, then filter by env toggle
   const allLogs = useMemo(() => {
@@ -62,10 +62,7 @@ export default function LogViewer({ prodLogs, shadowLogs, watcherPaths, analyzer
     });
   }, [prodLogs, shadowLogs]);
 
-  const logs = useMemo(() => {
-    if (env === "all") return allLogs;
-    return allLogs.filter(l => (l.env || "prod") === env);
-  }, [allLogs, env]);
+  const logs = allLogs;
 
   // Build a set of flagged request paths from events
   const eventsByPath = useMemo(() => {
@@ -79,26 +76,7 @@ export default function LogViewer({ prodLogs, shadowLogs, watcherPaths, analyzer
     return map;
   }, [events]);
 
-  // Build set of analyzer-flagged requests
-  const analyzerFlagged = useMemo(() => {
-    const set = new Set();
-    for (const a of audit) {
-      if (a.action === "shadow_exploit_detected" && a.detail) {
-        // Extract request path from detail
-        const match = a.detail.match(/request=(\S+)/);
-        if (match) set.add(match[1]);
-      }
-    }
-    return set;
-  }, [audit]);
-
   // Auto-scroll
-  useEffect(() => {
-    if (autoScroll && scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [logs.length, autoScroll]);
-
   const filteredLogs = useMemo(() => {
     const filtered = !filter ? logs : logs.filter(l => {
       const q = filter.toLowerCase();
@@ -110,10 +88,12 @@ export default function LogViewer({ prodLogs, shadowLogs, watcherPaths, analyzer
       );
     });
 
-    // Group consecutive identical requests (same method+path+ip+status)
-    // Assign stable IDs based on content + sequence counter
+    // Group nearby identical requests (same method+path+ip+status)
+    // Looks back up to 4 entries to merge interleaved patterns (e.g. v2/v3 alternating)
     const grouped = [];
     const idCounts = {};
+    const LOOKBACK = 4;
+
     for (const entry of filtered) {
       if (!entry._id) {
         const base = `${entry.time}|${entry.method}|${entry.path}|${entry.ip}|${entry.status}|${entry.env || "prod"}`;
@@ -121,36 +101,40 @@ export default function LogViewer({ prodLogs, shadowLogs, watcherPaths, analyzer
         entry._id = `${base}#${idCounts[base]}`;
       }
 
-      const last = grouped[grouped.length - 1];
-      if (
-        last && !last._group && !last._grouped &&
-        last.method === entry.method &&
-        last.path === entry.path &&
-        last.ip === entry.ip &&
-        last.status === entry.status &&
-        last.env === entry.env
-      ) {
-        const group = {
-          ...entry,
-          _id: `group_${last._id}`,
-          _group: true,
-          _count: 2,
-          _firstTime: last.time,
-          _lastTime: entry.time,
-          _samples: [last, entry],
-        };
-        grouped[grouped.length - 1] = group;
-      } else if (last?._group &&
-        last.method === entry.method &&
-        last.path === entry.path &&
-        last.ip === entry.ip &&
-        last.status === entry.status &&
-        last.env === entry.env
-      ) {
-        last._count++;
-        last._lastTime = entry.time;
-        if (last._samples.length < 5) last._samples.push(entry);
-      } else {
+      // Search recent entries for a matching group to merge into
+      let merged = false;
+      const searchStart = Math.max(0, grouped.length - LOOKBACK);
+      for (let i = grouped.length - 1; i >= searchStart; i--) {
+        const candidate = grouped[i];
+        if (
+          candidate.method === entry.method &&
+          candidate.path === entry.path &&
+          candidate.ip === entry.ip &&
+          candidate.status === entry.status &&
+          candidate.env === entry.env
+        ) {
+          if (candidate._group) {
+            candidate._count++;
+            candidate._lastTime = entry.time;
+            if (candidate._samples.length < 8) candidate._samples.push(entry);
+          } else {
+            // Convert single entry to group
+            const groupSig = `group_${entry.method}|${entry.path}|${entry.ip}|${entry.status}|${entry.env || "prod"}`;
+            grouped[i] = {
+              ...entry,
+              _id: groupSig,
+              _group: true,
+              _count: 2,
+              _firstTime: candidate.time,
+              _lastTime: entry.time,
+              _samples: [candidate, entry],
+            };
+          }
+          merged = true;
+          break;
+        }
+      }
+      if (!merged) {
         grouped.push(entry);
       }
     }
@@ -166,11 +150,7 @@ export default function LogViewer({ prodLogs, shadowLogs, watcherPaths, analyzer
   };
 
   const getRowClass = (entry) => {
-    // Check if analyzer flagged this (red)
-    if (analyzerFlagged.has(entry.path)) {
-      return "bg-red-950/50 border-l-4 border-red-500";
-    }
-    // Check if watcher flagged this (amber)
+    // Check if watcher flagged this — color by severity
     const evt = eventsByPath[entry.path];
     if (evt) {
       const sev = evt.severity?.toLowerCase?.() || evt.severity;
@@ -209,8 +189,9 @@ export default function LogViewer({ prodLogs, shadowLogs, watcherPaths, analyzer
 
         {/* Legend */}
         <div className="flex gap-3 text-xs text-gray-500 ml-2">
-          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-amber-500" /> Watcher</span>
-          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-red-500" /> Analyzer</span>
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-red-500" /> Critical/High</span>
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-amber-500" /> Medium</span>
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-yellow-600" /> Low</span>
           <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-purple-500" /> Honeypot</span>
         </div>
       </div>
@@ -253,7 +234,7 @@ function LogRow({ entry, idx, expanded, toggleExpand, getRowClass, eventsByPath 
         onClick={() => toggleExpand(idx)}
         className={`flex items-center gap-2 px-4 py-1 cursor-pointer hover:bg-gray-800/50 ${getRowClass(entry)}`}
       >
-        <span className="text-gray-600 w-20 shrink-0">{entry.time?.match(/(\d{2}:\d{2}:\d{2})/)?.[1] || ""}</span>
+        <span className="text-gray-600 w-20 shrink-0">{entry.time?.match(/:(\d{2}:\d{2}:\d{2})/)?.[1] || ""}</span>
         <span className={`w-10 shrink-0 font-bold ${METHOD_COLORS[entry.method] || "text-gray-400"}`}>
           {entry.method}
         </span>
@@ -300,33 +281,99 @@ function LogRow({ entry, idx, expanded, toggleExpand, getRowClass, eventsByPath 
       )}
 
       {isExpanded && isGroup && (
-        <div className="px-4 py-2 bg-gray-900/80 border-b border-gray-800 space-y-1">
-          <div className="flex items-center gap-3 text-[11px] text-gray-400 mb-2">
-            <span className="font-bold text-amber-400">{entry._count} repeated requests</span>
-            <span>{entry._firstTime?.match(/(\d{2}:\d{2}:\d{2})/)?.[1]} — {entry._lastTime?.match(/(\d{2}:\d{2}:\d{2})/)?.[1]}</span>
-            <span className="text-gray-600">{entry.method} {entry.path} → {entry.status}</span>
+        <GroupDetail entry={entry} />
+      )}
+    </div>
+  );
+}
+
+function GroupDetail({ entry }) {
+  const samples = entry._samples || [];
+  const userAgent = samples[0]?.user_agent || "";
+
+  // Find the common body template — detect which spans change across samples
+  const bodies = samples.map(s => s.body || s.req_body || "").filter(Boolean);
+  let template = null;
+  if (bodies.length >= 2) {
+    // Find longest common prefix/suffix and mark the variable middle
+    const first = bodies[0];
+    const allSame = bodies.every(b => b === first);
+    if (!allSame) {
+      // Simple approach: split bodies by common JSON keys and show what varies
+      // Find character-level common prefix
+      let prefixLen = 0;
+      while (prefixLen < first.length && bodies.every(b => b[prefixLen] === first[prefixLen])) prefixLen++;
+      // Find common suffix
+      let suffixLen = 0;
+      while (suffixLen < first.length - prefixLen &&
+             bodies.every(b => b[b.length - 1 - suffixLen] === first[first.length - 1 - suffixLen])) suffixLen++;
+      if (prefixLen > 0 || suffixLen > 0) {
+        const prefix = first.slice(0, prefixLen);
+        const suffix = suffixLen > 0 ? first.slice(-suffixLen) : "";
+        const variables = bodies.map(b => suffixLen > 0 ? b.slice(prefixLen, -suffixLen) : b.slice(prefixLen));
+        template = { prefix, suffix, variables };
+      }
+    }
+  }
+
+  return (
+    <div className="px-4 py-2 bg-gray-900/80 border-b border-gray-800 space-y-2">
+      {/* Header: shared fields */}
+      <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px]">
+        <KeyVal k="Method" v={entry.method} color={METHOD_COLORS[entry.method]} />
+        <KeyVal k="Status" v={`${entry.status} ${HTTP_STATUS_NAMES[entry.status] || ""}`} color={STATUS_COLORS[entry.status]} />
+        <KeyVal k="URL" v={entry.path} />
+        <KeyVal k="IP" v={entry.ip} />
+        <KeyVal k="Count" v={entry._count} color="text-amber-400" />
+        <KeyVal k="Window" v={`${entry._firstTime?.match(/:(\d{2}:\d{2}:\d{2})/)?.[1]} — ${entry._lastTime?.match(/:(\d{2}:\d{2}:\d{2})/)?.[1]}`} />
+      </div>
+
+      {userAgent && <Detail label="User-Agent" value={userAgent} />}
+
+      {/* Body template with variable highlight */}
+      {template && (
+        <div>
+          <span className="text-gray-500 text-[10px] uppercase tracking-wider">Request Body Pattern</span>
+          <div className="mt-0.5 text-[11px] bg-gray-950 rounded p-1.5 font-mono">
+            <span className="text-gray-400">{template.prefix}</span>
+            <span className="text-amber-400 bg-amber-950/40 px-0.5 rounded">{"{{varies}}"}</span>
+            <span className="text-gray-400">{template.suffix}</span>
           </div>
-          <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Latest samples</div>
-          {entry._samples.map((s, i) => (
+          <div className="mt-1 text-[10px] text-gray-500">
+            <span className="uppercase tracking-wider">Values: </span>
+            {template.variables.slice(0, 8).map((v, i) => (
+              <span key={i} className="inline-block mr-1.5 px-1 py-0.5 bg-gray-800 rounded text-amber-300 font-mono">{v}</span>
+            ))}
+            {template.variables.length > 8 && (
+              <span className="text-gray-600">... +{template.variables.length - 8} more</span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* If all bodies are the same, just show it once */}
+      {bodies.length > 0 && !template && (
+        <Detail label="Request Body" value={bodies[0]} json />
+      )}
+
+      {/* If no body template, show individual samples */}
+      {bodies.length === 0 && samples.length > 0 && (
+        <>
+          <div className="text-[10px] text-gray-500 uppercase tracking-wider">Samples</div>
+          {samples.map((s, i) => (
             <div key={i} className="flex gap-2 px-2 py-0.5 text-[11px] bg-gray-950/50 rounded">
-              <span className="text-gray-600 w-16 shrink-0">{s.time?.match(/(\d{2}:\d{2}:\d{2})/)?.[1]}</span>
+              <span className="text-gray-600 w-16 shrink-0">{s.time?.match(/:(\d{2}:\d{2}:\d{2})/)?.[1]}</span>
               <span className={`w-6 shrink-0 ${STATUS_COLORS[s.status]}`}>{s.status}</span>
-              {(s.body || s.req_body) && (
-                <span className="text-gray-400 truncate">{s.body || s.req_body}</span>
-              )}
-              {s.auth && !s.body && !s.req_body && (
-                <span className="text-gray-500 truncate">{s.auth}</span>
-              )}
-              {!s.body && !s.req_body && !s.auth && (
-                <span className="text-gray-600">—</span>
-              )}
+              {s.auth && <span className="text-gray-500 truncate">{s.auth}</span>}
+              {!s.auth && <span className="text-gray-600">—</span>}
             </div>
           ))}
-          {entry._count > entry._samples.length && (
-            <div className="text-[10px] text-gray-600 px-2">
-              ... and {entry._count - entry._samples.length} more
-            </div>
-          )}
+        </>
+      )}
+
+      {entry._count > samples.length && (
+        <div className="text-[10px] text-gray-600">
+          ... and {entry._count - samples.length} more
         </div>
       )}
     </div>
@@ -366,9 +413,25 @@ function LogPanel({ title, titleColor, logs, expanded, toggleExpand, getRowClass
 
   useEffect(() => {
     if (autoScroll && isAtBottom.current && ref.current) {
-      ref.current.scrollTop = ref.current.scrollHeight;
+      requestAnimationFrame(() => {
+        if (ref.current) {
+          ref.current.scrollTop = ref.current.scrollHeight;
+        }
+      });
     }
-  }, [logs.length, autoScroll]);
+  }, [logs, autoScroll]);
+
+  // When an entry is expanded/collapsed, keep scroll at bottom if auto-scroll is on
+  useEffect(() => {
+    if (autoScroll && ref.current) {
+      requestAnimationFrame(() => {
+        if (ref.current) {
+          ref.current.scrollTop = ref.current.scrollHeight;
+          isAtBottom.current = true;
+        }
+      });
+    }
+  }, [expanded, autoScroll]);
 
   return (
     <div className="flex-1 flex flex-col min-h-0 min-w-0">

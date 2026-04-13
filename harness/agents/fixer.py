@@ -143,17 +143,13 @@ class Fixer:
             if keyword.lower() in analysis:
                 files_to_read.add(rel_path)
 
-        # Always include URL routing for context
-        files_to_read.add("services/workshop/crapi_site/urls.py")
-
-        # If a views.py matched, also include its serializers and urls
+        # If a views.py matched, also include its urls.py for routing context
         for f in list(files_to_read):
             if f.endswith("views.py"):
                 parent = str(Path(f).parent)
-                for extra in ["serializers.py", "urls.py", "models.py"]:
-                    extra_path = f"{parent}/{extra}"
-                    if Path("crapi-fork") / extra_path:
-                        files_to_read.add(extra_path)
+                urls_path = f"{parent}/urls.py"
+                if (Path("crapi-fork") / urls_path).exists():
+                    files_to_read.add(urls_path)
 
         output = []
         total_len = 0
@@ -177,7 +173,7 @@ class Fixer:
     def get_system_prompt(self) -> str:
         return SYSTEM_PROMPT
 
-    async def generate_patch(self, triage: TriageResult, rejections: list = None, on_tool_call: callable = None, on_prompt_built: callable = None) -> PatchProposal | None:
+    async def generate_patch(self, triage: TriageResult, rejections: list = None, on_tool_call: callable = None, on_prompt_built: callable = None, agent_name: str = "") -> PatchProposal | None:
         """Generate and apply a patch inside running containers."""
         if not self.cost_governor.can_spend(triage.event_id, CODE_FIX_COST_ESTIMATE):
             logger.warning("Budget exceeded, cannot patch for %s", triage.event_id)
@@ -206,15 +202,27 @@ class Fixer:
 
         max_retries = 3
         response_text = ""
+        actual_cost = 0.0
         for attempt in range(max_retries):
             try:
-                response_text = await run_agent(
-                    prompt=prompt,
-                    system_prompt=SYSTEM_PROMPT,
-                    max_turns=100,
-                    on_tool_call=on_tool_call,
+                response_text, actual_cost = await asyncio.wait_for(
+                    run_agent(
+                        prompt=prompt,
+                        system_prompt=SYSTEM_PROMPT,
+                        max_turns=45,
+                        on_tool_call=on_tool_call,
+                        agent_name=agent_name,
+                    ),
+                    timeout=300,  # 5 minute hard cap per attempt
                 )
                 break  # success
+            except asyncio.TimeoutError:
+                logger.error(
+                    "Fixer timed out for %s (attempt %d/%d): exceeded 5min cap",
+                    triage.event_id, attempt + 1, max_retries,
+                )
+                if attempt >= max_retries - 1:
+                    return None
             except Exception as e:
                 logger.error(
                     "Fixer LLM call failed for %s (attempt %d/%d): %s",
@@ -227,7 +235,7 @@ class Fixer:
                 else:
                     return None
 
-        self.cost_governor.record_spend(triage.event_id, CODE_FIX_COST_ESTIMATE)
+        self.cost_governor.record_spend(triage.event_id, actual_cost)
 
         if not response_text.strip():
             logger.error("Fixer returned empty response for %s", triage.event_id)

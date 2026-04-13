@@ -32,8 +32,10 @@ from harness.shadow_analyzer import ShadowAnalyzer
 from harness.types import (
     ApprovalPolicy,
     AuditEntry,
+    PipelineTicket,
     SecurityEvent,
     Severity,
+    TicketStatus,
 )
 
 logger = logging.getLogger(__name__)
@@ -58,6 +60,8 @@ class Orchestrator:
         self.logs_dir = project_dir / "logs" / "nginx"
         self.rules_dir = project_dir / "detection" / "rules"
         self.config_dir = project_dir / "config"
+        self.pipeline_dir = project_dir / "pipeline"
+        self.pipeline_dir.mkdir(exist_ok=True)
 
         # Load config
         self.policies = self._load_yaml("policies.yaml")
@@ -95,8 +99,29 @@ class Orchestrator:
         # Same vuln type on same endpoint detected multiple times = duplicate
         self._pending_vulns: set[str] = set()   # currently queued/being fixed
         self._fixed_vulns: set[str] = set()     # already patched + deployed
+        self._stale_tickets: list = []           # tickets to re-enqueue on startup
 
-        # Restore fixed vulns from previous patches on disk
+        # Restore dedup state from pipeline tickets on disk
+        # Reset stale fixing/reviewing tickets back to detected (queue was lost on restart)
+        for ticket_file in self.pipeline_dir.glob("*.json"):
+            try:
+                ticket = PipelineTicket.load(ticket_file)
+                if ticket.dedup_key:
+                    if ticket.status == TicketStatus.DEPLOYED.value:
+                        self._fixed_vulns.add(ticket.dedup_key)
+                    elif ticket.status in (TicketStatus.QUEUED.value, TicketStatus.FIXING.value,
+                                           TicketStatus.PENDING_REVIEW.value, TicketStatus.REVIEWING.value):
+                        # Queue was lost — reset and re-enqueue
+                        ticket.status = TicketStatus.QUEUED.value
+                        ticket.agent = ""
+                        ticket.save(self.pipeline_dir)
+                        self._pending_vulns.add(ticket.dedup_key)
+                        self._stale_tickets.append(ticket)
+                        logger.info("Reset stale ticket %s (%s) — will re-enqueue",
+                                    ticket.id, ticket.type)
+            except Exception:
+                pass
+        # Also check patches dir for backward compat
         for patch_file in self.patches_dir.glob("*.json"):
             try:
                 data = json.loads(patch_file.read_text())
@@ -115,6 +140,7 @@ class Orchestrator:
             cost_governor=self.cost_governor,
             interval=10.0,
             on_exploit_detected=self._enqueue_exploit,
+            on_cycle_complete=self._on_analyzer_cycle,
         )
 
         # Batching queues
@@ -146,6 +172,17 @@ class Orchestrator:
             except (json.JSONDecodeError, OSError):
                 pass
 
+        # Write agent model info for dashboard
+        from harness.agents.llm_runner import AGENT_MODEL, COMPLETION_MODEL
+        agent_models = {
+            "watcher": None,
+            "shadow_analyzer": COMPLETION_MODEL,
+            "fixer": AGENT_MODEL,
+            "reviewer": AGENT_MODEL,
+        }
+        (self.config_dir / "agent_models.json").write_text(
+            json.dumps(agent_models, indent=2))
+
         # Start core loops (non-scalable singletons)
         core_tasks = {
             "scanner": asyncio.create_task(self._scan_loop(poll_interval)),
@@ -156,6 +193,22 @@ class Orchestrator:
         # Start scalable agents at configured counts
         self._scale_agents("fixer", self._current_counts.get("fixer", 2))
         self._scale_agents("reviewer", self._current_counts.get("reviewer", 1))
+
+        # Re-enqueue stale tickets from previous run
+        for ticket in self._stale_tickets:
+            attack = {
+                "type": ticket.type,
+                "severity": ticket.severity,
+                "vulnerability": ticket.evidence,
+                "evidence": ticket.evidence,
+                "request": "",
+                "fix_recommendation": "",
+                "_event_id": ticket.id,
+                "_dedup_key": ticket.dedup_key,
+            }
+            await self._exploit_queue.put(attack)
+            logger.info("Re-enqueued stale ticket %s (%s)", ticket.id, ticket.type)
+        self._stale_tickets.clear()
 
         # Watch for scaling changes
         scale_watcher = asyncio.create_task(self._watch_agent_counts())
@@ -235,6 +288,18 @@ class Orchestrator:
                 await handler(item)
             except Exception as e:
                 logger.error("Agent '%s' error (continuing): %s", name, e, exc_info=True)
+                # Reset ticket status if the handler crashed
+                try:
+                    event_id = None
+                    if isinstance(item, dict):
+                        event_id = item.get("_event_id")
+                    elif isinstance(item, tuple) and len(item) >= 1:
+                        event_id = getattr(item[0], "event_id", None)
+                    if event_id:
+                        self._update_ticket(event_id, status=TicketStatus.QUEUED.value, agent="")
+                        self._audit("error", event_id, name, f"Agent crashed: {e}")
+                except Exception:
+                    pass
 
     async def _scan_loop(self, interval: float) -> None:
         """Continuously scan logs for new events."""
@@ -244,6 +309,17 @@ class Orchestrator:
                 for event in events:
                     self._audit("detection", event.event_id, "watcher",
                                 f"Detected {event.event_type} [{event.severity.value}]")
+
+                    # Create a pipeline ticket for dashboard visibility
+                    self._update_ticket(
+                        event.event_id,
+                        type=event.event_type,
+                        endpoint=event.evidence.get("path", ""),
+                        severity=event.severity.value,
+                        status=TicketStatus.DETECTED.value,
+                        evidence=f"{event.event_type} [{event.severity.value}] from {event.evidence.get('source_ip', '')}",
+                        dedup_key=f"watcher|{event.event_type}|{event.evidence.get('source_ip', '')}",
+                    )
 
                     # Score session IMMEDIATELY — never delay redirect decisions
                     try:
@@ -302,6 +378,15 @@ class Orchestrator:
         self._audit("event_recorded", event.event_id, "orchestrator",
                      f"{event.event_type} [{event.severity.value}]")
 
+    async def _on_analyzer_cycle(self, n_entries: int, n_attacks: int) -> None:
+        """Called after each shadow analyzer cycle."""
+        if n_attacks > 0:
+            self._audit("shadow_analysis_complete", "system", "shadow_analyzer",
+                         f"Analyzed {n_entries} entries — {n_attacks} exploit(s) detected")
+        else:
+            self._audit("shadow_analysis_complete", "system", "shadow_analyzer",
+                         f"Analyzed {n_entries} entries — no exploits detected")
+
     async def _enqueue_exploit(self, attack: dict) -> None:
         """Called by ShadowAnalyzer — drops the exploit into the fixer queue.
         Deduplicates by type+endpoint — same vuln type on different endpoints
@@ -337,6 +422,16 @@ class Orchestrator:
         self._audit("shadow_exploit_detected", event_id, "shadow_analyzer",
                      f"type={exploit_type} severity={severity} "
                      f"vuln={vuln_key} request={request_line}")
+
+        self._update_ticket(
+            event_id,
+            type=exploit_type,
+            endpoint=endpoint,
+            severity=severity,
+            status=TicketStatus.QUEUED.value,
+            evidence=f"type={exploit_type} severity={severity} vuln={vuln_key} request={request_line}",
+            dedup_key=dedup_key,
+        )
 
         self._pending_vulns.add(dedup_key)
         await self._exploit_queue.put(attack)
@@ -379,22 +474,40 @@ class Orchestrator:
         retry_label = f" (retry #{len(rejections)})" if rejections else ""
         self._audit("fixer_started", event_id, agent_name,
                      f"Fixing{retry_label} {exploit_type}: {vuln}")
+        self._update_ticket(event_id, status=TicketStatus.FIXING.value,
+                            agent=agent_name, retry_count=len(rejections))
         def _on_tool(cmd):
             self._audit("tool_call", event_id, agent_name, cmd)
 
-        def _on_prompt(sys_prompt, user_prompt):
-            self._audit("system_prompt", event_id, agent_name, sys_prompt)
+        def _on_prompt(_sys_prompt, user_prompt):
             self._audit("user_prompt", event_id, agent_name, user_prompt)
 
         patch = await self.fixer.generate_patch(
             triage, rejections=rejections, on_tool_call=_on_tool,
-            on_prompt_built=_on_prompt)
+            on_prompt_built=_on_prompt, agent_name=agent_name)
         dedup_key = attack.get("_dedup_key", f"{exploit_type}|unknown")
 
         if patch is None:
-            self._audit("error", event_id, agent_name,
-                         f"Patch generation failed for: {exploit_type}")
-            self._pending_vulns.discard(dedup_key)
+            fixer_retries = attack.get("_fixer_retries", 0)
+            max_fixer_retries = 3
+            self._audit("patch_failed", event_id, agent_name,
+                         f"{exploit_type} — Fixer failed to generate a patch"
+                         f" (attempt {fixer_retries + 1}/{max_fixer_retries})")
+            if fixer_retries + 1 < max_fixer_retries:
+                # Re-enqueue with incremented retry count
+                attack["_fixer_retries"] = fixer_retries + 1
+                self._update_ticket(event_id, status=TicketStatus.QUEUED.value, agent="")
+                await self._exploit_queue.put(attack)
+                logger.info("Re-queued %s for fixer retry %d/%d",
+                            event_id, fixer_retries + 2, max_fixer_retries)
+            else:
+                # Max retries exhausted — give up
+                self._audit("patch_abandoned", event_id, agent_name,
+                             f"{exploit_type} — Fixer gave up after {max_fixer_retries} attempts")
+                self._update_ticket(event_id, status=TicketStatus.DETECTED.value, agent="")
+                self._pending_vulns.discard(dedup_key)
+                logger.warning("Fixer gave up on %s after %d attempts",
+                               event_id, max_fixer_retries)
             return
 
         # Mark as fixed — don't re-fix
@@ -405,7 +518,11 @@ class Orchestrator:
         self._save_patch(patch, triage, dedup_key)
 
         self._audit("patch_proposed", event_id, agent_name,
-                     f"exploit={exploit_type} files={patch.files_modified}")
+                     f"{exploit_type} — {patch.description}")
+        self._update_ticket(event_id, status=TicketStatus.PENDING_REVIEW.value,
+                            agent="", patch_id=patch.patch_id,
+                            patch_description=patch.description,
+                            patch_files=patch.files_modified)
 
         # Hand off to reviewer (include original attack for re-queue on rejection)
         await self._review_queue.put((triage, patch, attack))
@@ -418,11 +535,15 @@ class Orchestrator:
         event_id = triage.event_id
         dedup_key = attack.get("_dedup_key", "")
 
-        def _on_review_prompt(sys_prompt, user_prompt):
-            self._audit("system_prompt", event_id, "reviewer", sys_prompt)
+        self._update_ticket(event_id, status=TicketStatus.REVIEWING.value, agent="reviewer")
+
+        def _on_review_prompt(_sys_prompt, user_prompt):
             self._audit("user_prompt", event_id, "reviewer", user_prompt)
 
-        review = await self.reviewer.review(triage, patch, on_prompt_built=_on_review_prompt)
+        def _on_review_tool(cmd):
+            self._audit("tool_call", event_id, "reviewer", cmd)
+
+        review = await self.reviewer.review(triage, patch, on_prompt_built=_on_review_prompt, on_tool_call=_on_review_tool)
         if review and not review.approved:
             self._audit("review_rejected", event_id, "reviewer",
                          f"Patch rejected: {review.issues}")
@@ -437,6 +558,8 @@ class Orchestrator:
                 "suggestion": review.suggestion if hasattr(review, 'suggestion') else "",
             })
             attack["_rejections"] = prev_rejections
+            self._update_ticket(event_id, status=TicketStatus.QUEUED.value,
+                                agent="", retry_count=len(prev_rejections))
             # Re-queue for fixer to try again
             await self._exploit_queue.put(attack)
             logger.info("Re-queued rejected vuln for fixer (attempt %d): %s",
@@ -445,6 +568,7 @@ class Orchestrator:
 
         # Deploy: rebuild/reload affected services
         await self._deploy_patch(patch, event_id)
+        self._update_ticket(event_id, status=TicketStatus.DEPLOYED.value)
 
         self._audit("deployed", event_id, "reviewer",
                      f"Approved and deployed: {triage.classification} — {patch.description}")
@@ -524,9 +648,12 @@ class Orchestrator:
 
         # Build IP:UserAgent composite fingerprint (matches nginx Lua logic)
         source_ip = event.evidence.get("source_ip", "")
-        # Extract User-Agent from log line (watcher doesn't always put it in evidence)
-        ua_match = re.search(r'" "([^"]*)" rt=', log_line)
-        user_agent = ua_match.group(1) if ua_match else ""
+        user_agent = event.evidence.get("user_agent", "")
+        if not user_agent and log_line:
+            # Fallback: extract from log line (format: ... "referer" "UA" rt=...)
+            import re
+            ua_match = re.search(r'" "([^"]*)" rt=', log_line)
+            user_agent = ua_match.group(1) if ua_match else ""
         fingerprint = f"{source_ip}:{user_agent}" if source_ip else ""
 
         # Score the session
@@ -545,12 +672,43 @@ class Orchestrator:
                     "SESSION REDIRECTED TO SHADOW for %s (trigger: %s)",
                     event.event_id, event.event_type,
                 )
+                # Sync attacker's user record to shadow DB so their token works
+                self._sync_attacker_to_shadow(token)
+            # Also sync on subsequent events if token is present and session already in shadow
+            elif token and token != "-":
+                self._sync_attacker_to_shadow(token)
             else:
                 self._audit("session_scored", event.event_id, "orchestrator",
                             f"Scored {event.event_type} [{event.severity.value}] "
                             f"identifiers={result.get('identifiers', [])}")
         except Exception as e:
             logger.error("Failed to score session for %s: %s", event.event_id, e)
+
+    _synced_emails: set[str] = set()
+
+    def _sync_attacker_to_shadow(self, token: str) -> None:
+        """Extract email from JWT and sync user to shadow DB."""
+        if not token or token == "-":
+            return
+        try:
+            import jwt as pyjwt
+            # Strip "Bearer " prefix
+            raw = token.replace("Bearer ", "").strip()
+            # Decode without verification (we just need the email)
+            payload = pyjwt.decode(raw, options={"verify_signature": False})
+            email = payload.get("sub", "")
+            if not email:
+                return
+            if email in self._synced_emails:
+                return
+            self._synced_emails.add(email)
+            from harness.shadow_user_sync import sync_user_to_shadow
+            synced = sync_user_to_shadow(email)
+            if synced:
+                self._audit("shadow_user_synced", "system", "orchestrator",
+                            f"Synced user {email} to shadow DB")
+        except Exception as e:
+            logger.error("Shadow user sync failed: %s", e)
 
     def _save_patch(self, patch, triage, dedup_key: str = "") -> None:
         """Save patch record to disk for the dashboard."""
@@ -562,6 +720,18 @@ class Orchestrator:
         patch_data["_dedup_key"] = dedup_key
         patch_file = self.patches_dir / f"{patch.patch_id}.json"
         patch_file.write_text(json.dumps(patch_data, indent=2, default=str))
+
+    def _update_ticket(self, ticket_id: str, **kwargs) -> PipelineTicket:
+        """Load existing ticket or create new, apply updates, save."""
+        path = self.pipeline_dir / f"{ticket_id}.json"
+        if path.exists():
+            ticket = PipelineTicket.load(path)
+        else:
+            ticket = PipelineTicket(id=ticket_id)
+        for k, v in kwargs.items():
+            setattr(ticket, k, v)
+        ticket.save(self.pipeline_dir)
+        return ticket
 
     def _audit(self, action: str, event_id: str, agent: str, detail: str) -> None:
         """Write an immutable audit entry."""

@@ -35,8 +35,7 @@ export default function VulnStatus({ vulns, patches, events }) {
   }, [vulns]);
 
   const totalVulns = vulns.length;
-  const patchedCount = vulns.filter(v => v.status === "patched").length;
-  const inProgressCount = vulns.filter(v => v.status === "in_progress").length;
+  const solvedCount = vulns.filter(v => v.solves > 0).length;
 
   return (
     <div className="h-full overflow-y-auto p-4">
@@ -44,24 +43,18 @@ export default function VulnStatus({ vulns, patches, events }) {
       <div className="flex items-center gap-6 mb-6">
         <h2 className="text-lg font-bold text-white">Vulnerability Status</h2>
         <div className="flex-1 h-3 bg-gray-800 rounded-full overflow-hidden flex">
-          {patchedCount > 0 && (
+          {solvedCount > 0 && (
             <div
-              className="h-full bg-green-600 transition-all duration-500"
-              style={{ width: `${(patchedCount / totalVulns) * 100}%` }}
-            />
-          )}
-          {inProgressCount > 0 && (
-            <div
-              className="h-full bg-amber-600 transition-all duration-500"
-              style={{ width: `${(inProgressCount / totalVulns) * 100}%` }}
+              className="h-full bg-red-600 transition-all duration-500"
+              style={{ width: `${(solvedCount / totalVulns) * 100}%` }}
             />
           )}
         </div>
         <span className="text-sm text-gray-400">
-          <span className="text-green-400 font-bold">{patchedCount}</span>
+          <span className="text-red-400 font-bold">{solvedCount}</span>
           <span className="text-gray-600"> / </span>
           <span className="text-white font-bold">{totalVulns}</span>
-          <span className="text-gray-500 ml-1">patched</span>
+          <span className="text-gray-500 ml-1">captured</span>
         </span>
       </div>
 
@@ -92,9 +85,6 @@ export default function VulnStatus({ vulns, patches, events }) {
                   >
                     <div className="flex items-start justify-between">
                       <h3 className="text-sm font-bold text-white">{v.name}</h3>
-                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded text-white ${statusStyle.labelBg}`}>
-                        {statusStyle.label}
-                      </span>
                     </div>
                     <p className="text-xs text-gray-400 mt-1">{v.description}</p>
 

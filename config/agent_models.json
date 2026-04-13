@@ -1,0 +1,6 @@
+{
+  "watcher": null,
+  "shadow_analyzer": "gemini-2.5-flash",
+  "fixer": "gemini-3-flash-preview",
+  "reviewer": "gemini-3-flash-preview"
+}

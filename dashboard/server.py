@@ -25,6 +25,7 @@ AUDIT_DIR = DATA_ROOT / "audit"
 PATCHES_DIR = DATA_ROOT / "patches"
 DETECTION_DIR = DATA_ROOT / "detection"
 CONTROL_PLANE_URL = os.environ.get("CONTROL_PLANE_URL", "http://control-plane:9090")
+PIPELINE_DIR = DATA_ROOT / "pipeline"
 CONFIG_DIR = DATA_ROOT / "config"
 
 app = FastAPI(title="Reactive Defender Dashboard")
@@ -61,6 +62,11 @@ async def get_audit():
 @app.get("/api/patches")
 async def get_patches():
     return _load_json_dir(PATCHES_DIR)
+
+
+@app.get("/api/pipeline")
+async def get_pipeline():
+    return _load_json_dir(PIPELINE_DIR)
 
 
 @app.get("/api/status")
@@ -209,11 +215,13 @@ async def reset_sessions():
 async def reset_events():
     """Clear events, audit, and patches directories."""
     cleared = 0
-    for d in (EVENTS_DIR, AUDIT_DIR, PATCHES_DIR):
+    skip = {"cost_ledger.json"}
+    for d in (EVENTS_DIR, AUDIT_DIR, PATCHES_DIR, PIPELINE_DIR):
         if d.exists():
             for f in d.glob("*.json"):
-                f.unlink()
-                cleared += 1
+                if f.name not in skip:
+                    f.unlink()
+                    cleared += 1
     return {"status": "ok", "cleared": cleared}
 
 
@@ -276,6 +284,30 @@ async def get_costs():
         "incident_count": len(incident_spend),
         "paused": ledger.get("paused", False),
     }
+
+
+@app.get("/api/agents/models")
+async def get_agent_models():
+    """Return LLM model used by each agent type."""
+    models_file = CONFIG_DIR / "agent_models.json"
+    if models_file.exists():
+        try:
+            return json.loads(models_file.read_text())
+        except (json.JSONDecodeError, OSError):
+            pass
+    return {}
+
+
+@app.get("/api/agents/heartbeats")
+async def get_agent_heartbeats():
+    """Return per-agent heartbeat data (last API response time, turn progress)."""
+    hb_file = CONFIG_DIR / "agent_heartbeats.json"
+    if hb_file.exists():
+        try:
+            return json.loads(hb_file.read_text())
+        except (json.JSONDecodeError, OSError):
+            pass
+    return {}
 
 
 @app.get("/api/agents/counts")
@@ -466,6 +498,7 @@ async def websocket_endpoint(ws: WebSocket):
             (EVENTS_DIR, "event"),
             (AUDIT_DIR, "audit"),
             (PATCHES_DIR, "patch"),
+            (PIPELINE_DIR, "pipeline_update"),
         ]:
             if not directory.exists():
                 continue
@@ -518,6 +551,7 @@ async def startup():
     asyncio.create_task(watch_json_dir(EVENTS_DIR, "event"))
     asyncio.create_task(watch_json_dir(AUDIT_DIR, "audit"))
     asyncio.create_task(watch_json_dir(PATCHES_DIR, "patch"))
+    asyncio.create_task(watch_json_dir(PIPELINE_DIR, "pipeline_update"))
     asyncio.create_task(poll_control_plane())
     asyncio.create_task(truncate_logs())
     logger.info("Dashboard backend started — tailing logs, watching directories")

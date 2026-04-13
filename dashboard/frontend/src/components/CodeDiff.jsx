@@ -1,22 +1,24 @@
 import { useState, useMemo } from "react";
 
-export default function CodeDiff({ patches, audit }) {
+export default function CodeDiff({ patches, audit, pipelineTickets = [] }) {
   const [selected, setSelected] = useState(null);
 
-  // Enrich patches with audit info
+  // Enrich patches with status from pipeline tickets
   const enrichedPatches = useMemo(() => {
+    const ticketByEvent = {};
+    for (const t of pipelineTickets) ticketByEvent[t.id] = t;
+
     return patches.map(p => {
+      const ticket = ticketByEvent[p.event_id];
       const related = audit.filter(a => a.event_id === p.event_id);
-      const deployed = related.find(a => a.action === "deployed");
-      const proposed = related.find(a => a.action === "patch_proposed");
-      const rejected = related.find(a => a.action === "review_rejected");
-      const fixerStarted = related.find(a => a.action === "fixer_started");
 
       let status = "unknown";
-      if (deployed) status = "deployed";
-      else if (rejected) status = "rejected";
-      else if (proposed) status = "proposed";
-      else if (fixerStarted) status = "proposed";
+      if (ticket) {
+        status = ticket.status === "deployed" ? "deployed" :
+                 (ticket.status === "reviewing" || ticket.status === "pending_review") ? "reviewing" :
+                 (ticket.status === "queued" && ticket.retry_count > 0) ? "rejected" :
+                 "proposed";
+      }
 
       return {
         ...p,
@@ -24,7 +26,7 @@ export default function CodeDiff({ patches, audit }) {
         timeline: related.sort((a, b) => a.timestamp - b.timestamp),
       };
     }).reverse(); // Most recent first
-  }, [patches, audit]);
+  }, [patches, audit, pipelineTickets]);
 
   const selectedPatch = selected != null ? enrichedPatches[selected] : null;
 
@@ -170,6 +172,7 @@ function DiffView({ diff }) {
 function StatusBadge({ status }) {
   const styles = {
     deployed: "bg-green-900 text-green-300 border-green-700",
+    reviewing: "bg-purple-900 text-purple-300 border-purple-700",
     proposed: "bg-amber-900 text-amber-300 border-amber-700",
     rejected: "bg-red-900 text-red-300 border-red-700",
     unknown: "bg-gray-800 text-gray-400 border-gray-700",

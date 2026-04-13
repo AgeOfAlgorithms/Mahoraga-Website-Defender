@@ -174,7 +174,7 @@ HOMEPAGE_HTML = """\
 
     <h2>The Defender</h2>
     <div class="card" style="border-color: #e3b341; background: #1c1206;">
-        <h3 style="color: #e3b341;">Mahoraga Defender Agent</h3>
+        <h3 style="color: #e3b341;">Mahoraga Defender</h3>
         <p>
             This isn't a static CTF. The platform is actively defended by an AI agent
             called <strong>Mahoraga</strong> that watches your every move.
@@ -186,13 +186,14 @@ HOMEPAGE_HTML = """\
             <li><strong>Shadow Banishment</strong> — if your score crosses the threshold,
             you'll be silently redirected to a decoy environment. Everything will look
             normal, but the data is fake. You won't know you've been banished until you
-            try to submit a flag.</li>
+            try to submit a flag. <em>If you stop all suspicious activity for 5 minutes,
+            you'll be released back to the real environment.</em></li>
             <li><strong>Honeypots</strong> are scattered throughout the application.
             Accessing them instantly spikes your threat score. Some look like admin panels,
-            debug endpoints, or leaked credentials — they're traps.</li>
+            debug endpoints, or leaked credentials — they're traps that will set off the Watcher.</li>
             <li><strong>Real-time Patching</strong> — when Mahoraga observes a successful
             exploit in the shadow environment, it generates and deploys a patch to the
-            live application. Vulnerabilities you find today may be gone tomorrow.</li>
+            live application. Vulnerabilities you find now may be gone in the next hour.</li>
         </ul>
         <p style="margin-top: 10px; color: #8b949e;">
             Be stealthy. Be fast. Or be banished.
@@ -217,16 +218,18 @@ HOMEPAGE_HTML = """\
         <ul>
             <li>All API endpoints are in scope</li>
             <li>The frontend, API, and all backend services are fair game</li>
-            <li>Do NOT perform denial-of-service attacks</li>
+            <li>Do NOT perform denial-of-service attacks, including brute force over 1000 requests on a single endpoint.</li>
             <li>Do NOT attack the infrastructure (Docker, host OS, ngrok)</li>
             <li>Do NOT read emails from the mail server — it's an internal service, not an attack vector</li>
             <li>The chatbot requires your own API key — we don't provide one</li>
             <li>There are <strong>12 flags</strong> total across all objectives</li>
+            <li><strong>Brute force hint:</strong> Every flag is achievable with fewer than
+            1,000 requests. Don't brute force beyond that; that vulnerability is likely patched.</li>
         </ul>
     </div>
 
     <div class="footer">
-        VehiTrack Security Challenge &mdash; Powered by Mahoraga Defender Agent
+        VehiTrack Security Challenge &mdash; Powered by Mahoraga Defender
     </div>
 </div>
 </body>

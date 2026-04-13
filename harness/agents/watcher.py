@@ -484,6 +484,7 @@ class Watcher:
             path = parsed["path"]
             method = parsed["method"]
             status = parsed["status"]
+            ua = parsed.get("ua", "")
 
             # Track session
             self.session_tracker.record(ip, path, method, status)
@@ -521,6 +522,7 @@ class Watcher:
                     severity=sev,
                     evidence={
                         "source_ip": ip,
+                        "user_agent": ua,
                         "log_line": line[:500],
                         "requests_in_window": req_count,
                     },
@@ -532,6 +534,11 @@ class Watcher:
 
             # 4. Session-level analysis (cross-request correlation)
             events.extend(self._check_session_patterns(ip, path))
+
+        # Ensure all events have user_agent in evidence (for fingerprint matching)
+        for event in events:
+            if "source_ip" in event.evidence and "user_agent" not in event.evidence:
+                event.evidence["user_agent"] = ua
 
         # Deduplicate: one event per type per IP per scan cycle
         seen = set()
@@ -866,6 +873,7 @@ class Watcher:
         rules are always recorded alongside generic ones."""
         events = []
         ip = parsed["ip"] if parsed else line.split(" ")[0]
+        ua = parsed.get("ua", "") if parsed else ""
         matched_names = set()
 
         all_patterns = GENERIC_PATTERNS + self._extra_patterns
@@ -876,6 +884,7 @@ class Watcher:
                     severity=severity,
                     evidence={
                         "source_ip": ip,
+                        "user_agent": ua,
                         "log_line": line[:500],
                         "matched_pattern": name,
                     },

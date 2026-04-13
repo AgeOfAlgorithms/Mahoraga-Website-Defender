@@ -46,18 +46,28 @@ const STALE_THRESHOLD_MS = 20_000;
 function classifyLevel(entry) {
   const detail = (entry.detail || "").toLowerCase();
   const action = (entry.action || "").toLowerCase();
-  if (detail.includes("error") || detail.includes("failed") || action.includes("error")) return "error";
+  // Action-based classification takes priority over detail text scanning
+  if (action.includes("success") || action.includes("applied") || action.includes("approved") || action.includes("passed") || action.includes("deployed") || action === "patch_proposed") return "success";
+  if (action.includes("error") || action === "patch_failed") return "error";
+  if (action.includes("rejected")) return "error";
+  if (action.includes("warning")) return "warning";
+  if (detail.includes("failed")) return "error";
   if (detail.includes("critical")) return "critical";
-  if (detail.includes("warning") || action.includes("warning")) return "warning";
-  if (action.includes("success") || action.includes("applied") || action.includes("approved") || action.includes("passed") || action.includes("deployed")) return "success";
   return "info";
 }
 
-function getAgentStatus(entries, now) {
+function getAgentStatus(entries, now, agentType) {
+  // Watcher is always active — it scans every 4s regardless of output
+  if (agentType === "watcher") return "active";
   if (entries.length === 0) return "idle";
   const last = entries[entries.length - 1];
-  const detail = (last.detail || "").toLowerCase();
-  if (detail.includes("error") || detail.includes("failed")) return "error";
+  const action = (last.action || "").toLowerCase();
+  // Success actions override any "failed" text in detail
+  if (action === "patch_proposed" || action.includes("deployed") || action.includes("approved")) {
+    const ts = (last.timestamp || 0) * 1000;
+    return now - ts < STALE_THRESHOLD_MS ? "active" : "idle";
+  }
+  if (action.includes("error") || action === "patch_failed" || action === "patch_abandoned") return "error";
   const ts = (last.timestamp || 0) * 1000;
   if (now - ts < STALE_THRESHOLD_MS) return "active";
   return "idle";
@@ -131,9 +141,15 @@ function AgentLogEntry({ entry }) {
   );
 }
 
-function AgentPanel({ agent, entries, status }) {
+function AgentPanel({ agent, entries, status, llm }) {
   const scrollRef = useRef(null);
   const isAtBottom = useRef(true);
+  const [promptOpen, setPromptOpen] = useState(false);
+
+  // Filter out system_prompt audit entries — shown statically instead
+  const filteredEntries = useMemo(() =>
+    entries.filter(e => e.action !== "system_prompt"),
+  [entries]);
 
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
@@ -145,7 +161,7 @@ function AgentPanel({ agent, entries, status }) {
     const el = scrollRef.current;
     if (!el || !isAtBottom.current) return;
     el.scrollTop = el.scrollHeight;
-  }, [entries.length]);
+  }, [filteredEntries.length]);
 
   const statusLabel = status === "active" ? "ACTIVE" : status === "error" ? "ERROR" : "IDLE";
   const statusTextColor = status === "active" ? "text-green-400" : status === "error" ? "text-red-400" : "text-gray-500";
@@ -155,6 +171,7 @@ function AgentPanel({ agent, entries, status }) {
       <div className="flex items-center gap-2 px-3 py-2 bg-gray-900/50 border-b border-gray-800 shrink-0">
         <StatusDot status={status} />
         <span className="font-medium text-sm text-gray-200">{agent.label}</span>
+        {llm && <span className="text-[9px] text-gray-500 font-mono">{llm}</span>}
         <span className={`ml-auto text-[10px] uppercase tracking-wider ${statusTextColor}`}>{statusLabel}</span>
       </div>
 
@@ -162,26 +179,44 @@ function AgentPanel({ agent, entries, status }) {
         {agent.description}
       </div>
 
+      {/* Static system prompt — always at top */}
+      {agent.systemPrompt && (
+        <div className="shrink-0 border-b border-cyan-700/50 bg-cyan-900/30">
+          <button
+            onClick={() => setPromptOpen(!promptOpen)}
+            className="w-full flex items-center gap-2 px-2 py-1 text-[10px] text-cyan-300 hover:brightness-125"
+          >
+            <span>{promptOpen ? "\u25BC" : "\u25B6"}</span>
+            <span className="font-bold uppercase tracking-wider">{agent.type === "watcher" ? "Description" : "System Prompt"}</span>
+          </button>
+          {promptOpen && (
+            <pre className="px-3 pb-2 text-[11px] text-gray-300 leading-relaxed whitespace-pre-wrap break-words max-h-64 overflow-y-auto">
+              {agent.systemPrompt}
+            </pre>
+          )}
+        </div>
+      )}
+
       <div
         ref={scrollRef}
         onScroll={handleScroll}
         className="flex-1 overflow-y-auto font-mono text-xs min-h-0"
       >
-        {entries.length === 0 ? (
+        {filteredEntries.length === 0 ? (
           <div className="flex items-center justify-center h-full text-gray-600 py-8">
             No activity yet
           </div>
         ) : (
           <div className="p-1">
-            {entries.map((entry, idx) => (
-              <AgentLogEntry key={entry.event_id || idx} entry={entry} />
+            {filteredEntries.map((entry, idx) => (
+              <AgentLogEntry key={`${entry.event_id}_${entry.action}_${idx}`} entry={entry} />
             ))}
           </div>
         )}
       </div>
 
       <div className="px-3 py-1 text-[10px] text-gray-600 border-t border-gray-800/50 shrink-0 text-right">
-        {entries.length} {entries.length === 1 ? "entry" : "entries"}
+        {filteredEntries.length} {filteredEntries.length === 1 ? "entry" : "entries"}
       </div>
     </div>
   );
@@ -193,10 +228,15 @@ export default function AgentsView({ audit }) {
   });
   const [now, setNow] = useState(Date.now());
   const [agentCounts, setAgentCounts] = useState({ fixer: 2, reviewer: 1 });
+  const [agentModels, setAgentModels] = useState({});
 
-  // Poll agent counts on mount
+  // Poll agent counts and models (counts may change from global status bar)
   useEffect(() => {
-    fetch("/api/agents/counts").then(r => r.json()).then(setAgentCounts).catch(() => {});
+    const fetchCounts = () => fetch("/api/agents/counts").then(r => r.json()).then(setAgentCounts).catch(() => {});
+    fetchCounts();
+    fetch("/api/agents/models").then(r => r.json()).then(setAgentModels).catch(() => {});
+    const interval = setInterval(fetchCounts, 3000);
+    return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {
@@ -252,49 +292,15 @@ export default function AgentsView({ audit }) {
   const statusByAgent = useMemo(() => {
     const map = {};
     for (const a of allAgents) {
-      map[a.id] = getAgentStatus(entriesByAgent[a.id] || [], now);
+      map[a.id] = getAgentStatus(entriesByAgent[a.id] || [], now, a.type);
     }
     return map;
   }, [entriesByAgent, now, allAgents]);
 
   return (
     <div className="h-full flex flex-col">
-      {/* Toolbar */}
-      <div className="flex items-center gap-4 px-4 py-2 bg-gray-900/50 border-b border-gray-800 shrink-0 flex-wrap">
-        {/* Singletons: Name o */}
-        {SINGLETON_AGENTS.map(agent => (
-          <div key={agent.id} className="flex items-center gap-1.5 text-xs">
-            <span className="text-gray-200">{agent.label}</span>
-            <StatusDot status={statusByAgent[agent.id]} />
-          </div>
-        ))}
-
-        {/* Scalable agents: [-] Name ooo [+] */}
-        {Object.entries(SCALABLE_TYPES).map(([type, meta]) => {
-          const count = agentCounts[type] || 1;
-          return (
-            <div key={type} className="flex items-center gap-1.5 text-xs border-l border-gray-700 pl-3">
-              <button
-                onClick={() => handleScale(type, count - 1)}
-                disabled={count <= 1}
-                className="w-5 h-5 flex items-center justify-center rounded text-xs font-bold bg-gray-700 text-gray-300 hover:bg-gray-600 disabled:opacity-30 disabled:cursor-not-allowed"
-              >-</button>
-              <span className="text-gray-200">{meta.label}</span>
-              <span className="flex items-center gap-0.5">
-                {Array.from({ length: count }, (_, i) => (
-                  <StatusDot key={i} status={statusByAgent[`${type}_${i + 1}`] || "idle"} />
-                ))}
-              </span>
-              <button
-                onClick={() => handleScale(type, count + 1)}
-                disabled={count >= 3}
-                className="w-5 h-5 flex items-center justify-center rounded text-xs font-bold bg-gray-700 text-gray-300 hover:bg-gray-600 disabled:opacity-30 disabled:cursor-not-allowed"
-              >+</button>
-            </div>
-          );
-        })}
-
-        {/* Column count */}
+      {/* Columns selector */}
+      <div className="flex items-center px-4 py-1 bg-gray-900/30 border-b border-gray-800/50 shrink-0">
         <div className="ml-auto flex items-center gap-1.5">
           <span className="text-[10px] text-gray-500">Columns</span>
           <select
@@ -304,22 +310,6 @@ export default function AgentsView({ audit }) {
           >
             {[1, 2, 3, 4].map(n => <option key={n} value={n}>{n}</option>)}
           </select>
-        </div>
-
-        {/* Summary counts */}
-        <div className="flex gap-3 text-xs text-gray-500">
-          <span className="flex items-center gap-1">
-            <span className="w-2 h-2 rounded-full bg-green-500" />
-            {Object.values(statusByAgent).filter(s => s === "active").length} active
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="w-2 h-2 rounded-full bg-gray-600" />
-            {Object.values(statusByAgent).filter(s => s === "idle").length} idle
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="w-2 h-2 rounded-full bg-red-500" />
-            {Object.values(statusByAgent).filter(s => s === "error").length} error
-          </span>
         </div>
       </div>
 
@@ -338,6 +328,7 @@ export default function AgentsView({ audit }) {
                 agent={agent}
                 entries={entriesByAgent[agent.id] || []}
                 status={statusByAgent[agent.id] || "idle"}
+                llm={agentModels[agent.type] || null}
               />
             </div>
           );

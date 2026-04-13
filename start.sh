@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
-echo "=== Mahoraga Defender Agent ==="
+echo "=== Mahoraga Defender ==="
 echo ""
 
 # Reset crapi-fork to unpatched original

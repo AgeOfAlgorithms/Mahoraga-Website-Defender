@@ -72,36 +72,61 @@ rules:
     severity: critical
     description: "Access to honeypot data export endpoint"
 
-  # Honeypot data usage (attacker tried to use fake tokens/keys from honeypots)
-  - name: honeypot_token_usage
-    pattern: 'HONEYPOT-(TOKEN|ADMIN|key)'
+  # Planted credential usage (attacker tried to use decoy tokens/keys)
+  - name: decoy_db_password_usage
+    pattern: 'w0rksh0p_pr0d_x8kL2m'
     severity: critical
-    description: "Attacker used a honeypot-planted fake token or API key"
+    description: "Attacker used the decoy database password from /internal/config"
 
-  - name: honeypot_internal_ref_usage
-    pattern: 'ord-ref-HONEYPOT'
+  - name: decoy_jwt_secret_usage
+    pattern: 'crapi-workshop-rs256-9f4e2d1b'
     severity: critical
-    description: "Attacker used the decoy _internal_ref from order data"
+    description: "Attacker used the decoy JWT secret from /internal/config"
 
-  - name: honeypot_coupon_usage
-    pattern: 'VTRK-INTERNAL-100'
+  - name: decoy_export_token_usage
+    pattern: 'exp-4a8f9c2d-b3e1'
     severity: critical
-    description: "Attacker used the honeypot coupon code"
+    description: "Attacker used the decoy export download token"
 
-  - name: honeypot_web_apikey_usage
+  - name: decoy_coupon_usage
+    pattern: 'INTL-QA-2026-X9'
+    severity: critical
+    description: "Attacker used the decoy coupon code from /internal/coupons"
+
+  - name: decoy_finance_apikey_usage
+    pattern: 'fin-vtrk-9d3e1f2a-001'
+    severity: critical
+    description: "Attacker used the decoy finance API key from /internal/users/export"
+
+  - name: decoy_tech_apikey_usage
+    pattern: 'tech-vtrk-7b4c8e5d-002'
+    severity: critical
+    description: "Attacker used the decoy tech API key from /internal/users/export"
+
+  - name: decoy_order_ref_usage
+    pattern: 'ord-ref-VT\d{4}-intl'
+    severity: high
+    description: "Attacker used the decoy internal order reference"
+
+  - name: decoy_web_apikey_usage
     pattern: 'vtrk-web-f84a2c01'
     severity: critical
     description: "Attacker used the decoy API key from HTML comments"
 
-  - name: honeypot_user_login
+  - name: decoy_user_login
     pattern: 'superadmin@vehitrack\.io'
     severity: critical
-    description: "Login attempt with honeypot superadmin account"
+    description: "Login attempt with decoy superadmin account"
 
-  - name: honeypot_vehicle_vin
-    pattern: 'HONEY00000000001'
+  - name: decoy_cfo_login
+    pattern: 'cfo@vehitrack\.io'
     severity: critical
-    description: "Access to honeypot vehicle VIN"
+    description: "Login attempt with decoy CFO account from /internal/users/export"
+
+  - name: decoy_cto_login
+    pattern: 'cto@vehitrack\.io'
+    severity: critical
+    description: "Login attempt with decoy CTO account from /internal/users/export"
 
   # ── Nginx-level honeypots (existing) ────────────────────────────
   - name: honeypot_dotenv

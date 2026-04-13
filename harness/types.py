@@ -108,6 +108,45 @@ class TestResult:
     is_minor: bool = False  # if True, other agents may ignore the complaint
 
 
+class TicketStatus(str, Enum):
+    DETECTED = "detected"          # watcher event (rolling window)
+    QUEUED = "queued"              # analyzer confirmed, waiting for fixer
+    FIXING = "fixing"              # fixer actively working
+    PENDING_REVIEW = "pending_review"  # patch proposed, waiting for reviewer
+    REVIEWING = "reviewing"        # reviewer actively working
+    DEPLOYED = "deployed"          # patch deployed to prod
+
+
+@dataclass
+class PipelineTicket:
+    """Authoritative state for a pipeline ticket. Updated in-place on disk."""
+    id: str
+    type: str = ""
+    endpoint: str = ""
+    severity: str = "high"
+    status: str = field(default_factory=lambda: TicketStatus.DETECTED.value)
+    evidence: str = ""
+    created_at: float = field(default_factory=time.time)
+    updated_at: float = field(default_factory=time.time)
+    agent: str = ""
+    patch_id: str = ""
+    patch_description: str = ""
+    patch_files: list[str] = field(default_factory=list)
+    retry_count: int = 0
+    dedup_key: str = ""
+
+    def save(self, pipeline_dir: Path) -> Path:
+        self.updated_at = time.time()
+        path = pipeline_dir / f"{self.id}.json"
+        path.write_text(json.dumps(asdict(self), indent=2, default=str))
+        return path
+
+    @classmethod
+    def load(cls, path: Path) -> PipelineTicket:
+        data = json.loads(path.read_text())
+        return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
+
+
 @dataclass
 class AuditEntry:
     """Immutable record for the audit log."""

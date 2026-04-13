@@ -92,6 +92,10 @@ services:
   crapi-workshop:
     build: ./crapi-fork/services/workshop
     container_name: crapi-workshop
+    volumes:
+      - ./crapi-fork/services/workshop/crapi:/app/crapi
+      - ./crapi-fork/services/workshop/crapi_site:/app/crapi_site
+      - ./crapi-fork/services/workshop/utils:/app/utils
     logging:
       driver: json-file
       options:
@@ -324,9 +328,10 @@ services:
       - "3000:3000"
     volumes:
       - ./logs:/data/logs
-      - ./events:/data/events:ro
-      - ./audit:/data/audit:ro
-      - ./patches:/data/patches:ro
+      - ./events:/data/events
+      - ./audit:/data/audit
+      - ./patches:/data/patches
+      - ./pipeline:/data/pipeline
       - ./detection:/data/detection:ro
       - ./config:/data/config
     environment:
@@ -480,6 +485,10 @@ services:
   shadow-workshop:
     image: reactive_defender-crapi-workshop:latest
     container_name: shadow-workshop
+    volumes:
+      - ./crapi-fork/services/workshop/crapi:/app/crapi
+      - ./crapi-fork/services/workshop/crapi_site:/app/crapi_site
+      - ./crapi-fork/services/workshop/utils:/app/utils
     environment:
       - LOG_LEVEL=INFO
       - IDENTITY_SERVICE=shadow-identity:8080

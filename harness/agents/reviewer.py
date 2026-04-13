@@ -84,7 +84,7 @@ class Reviewer:
     def get_system_prompt(self) -> str:
         return SYSTEM_PROMPT
 
-    async def review(self, triage: TriageResult, patch: PatchProposal, on_prompt_built: callable = None) -> ReviewResult | None:
+    async def review(self, triage: TriageResult, patch: PatchProposal, on_prompt_built: callable = None, on_tool_call: callable = None) -> ReviewResult | None:
         """Review a proposed patch."""
         if not self.cost_governor.can_spend(triage.event_id, REVIEW_COST_ESTIMATE):
             logger.warning("Budget exceeded, cannot review patch %s", patch.patch_id)
@@ -103,14 +103,26 @@ class Reviewer:
 
         max_retries = 3
         response_text = ""
+        actual_cost = 0.0
         for attempt in range(max_retries):
             try:
-                response_text = await run_agent(
-                    prompt=prompt,
-                    system_prompt=SYSTEM_PROMPT,
-                    max_turns=10,
+                response_text, actual_cost = await asyncio.wait_for(
+                    run_agent(
+                        prompt=prompt,
+                        system_prompt=SYSTEM_PROMPT,
+                        max_turns=15,
+                        on_tool_call=on_tool_call,
+                    ),
+                    timeout=180,  # 3 minute hard cap per attempt
                 )
                 break  # success
+            except asyncio.TimeoutError:
+                logger.error(
+                    "Reviewer timed out for %s (attempt %d/%d): exceeded 3min cap",
+                    patch.patch_id, attempt + 1, max_retries,
+                )
+                if attempt >= max_retries - 1:
+                    return None
             except Exception as e:
                 logger.error(
                     "Reviewer LLM call failed for %s (attempt %d/%d): %s",
@@ -123,7 +135,7 @@ class Reviewer:
                 else:
                     return None
 
-        self.cost_governor.record_spend(triage.event_id, REVIEW_COST_ESTIMATE)
+        self.cost_governor.record_spend(triage.event_id, actual_cost)
 
         try:
             text = response_text.strip()

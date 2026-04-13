@@ -169,23 +169,48 @@ def _get_llm_client() -> AsyncOpenAI:
     return AsyncOpenAI(
         api_key=api_key,
         base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-        timeout=httpx.Timeout(120.0, connect=15.0),
+        timeout=httpx.Timeout(connect=15.0, read=120.0, write=30.0, pool=15.0),
         max_retries=3,
     )
+
+
+AGENT_MODEL = "gemini-3-flash-preview"
+COMPLETION_MODEL = "gemini-2.5-flash"
+
+# Per-agent heartbeat tracking: agent_name → {last_response_time, turn, event_id}
+_agent_heartbeats: dict[str, dict] = {}
+
+# Pricing per million tokens (USD)
+MODEL_PRICING = {
+    "gemini-3-flash-preview": {"input": 0.50, "output": 3.00},
+    "gemini-2.5-flash": {"input": 0.30, "output": 2.50},
+}
+
+
+def _calc_cost(model: str, prompt_tokens: int, completion_tokens: int) -> float:
+    """Calculate cost in USD from token counts."""
+    pricing = MODEL_PRICING.get(model, MODEL_PRICING.get(AGENT_MODEL))
+    if not pricing:
+        return 0.0
+    return (prompt_tokens * pricing["input"] + completion_tokens * pricing["output"]) / 1_000_000
 
 
 async def run_agent(
     prompt: str,
     system_prompt: str,
     max_turns: int = 20,
-    model: str = "gemini-3-flash-preview",
+    model: str = AGENT_MODEL,
     on_tool_call: callable = None,
-) -> str:
+    agent_name: str = "",
+) -> tuple[str, float]:
     """Run an LLM agent with sandboxed bash tool access.
 
-    Returns the final text response from the model.
+    Returns (final_text_response, total_cost_usd).
     """
     client = _get_llm_client()
+
+    total_prompt_tokens = 0
+    total_completion_tokens = 0
 
     messages = [
         {"role": "system", "content": system_prompt},
@@ -193,6 +218,16 @@ async def run_agent(
     ]
 
     for turn in range(max_turns):
+        # Nudge the LLM to wrap up before it runs out of turns
+        if turn == max_turns - 3:
+            messages.append({
+                "role": "user",
+                "content": (
+                    "You are almost out of turns. Stop making tool calls and "
+                    "provide your final JSON response NOW."
+                ),
+            })
+
         try:
             response = await client.chat.completions.create(
                 model=model,
@@ -203,6 +238,31 @@ async def run_agent(
         except Exception as e:
             logger.error("[%s] API call failed on turn %d: %s", model, turn + 1, e)
             raise
+
+        # Accumulate token usage
+        if response.usage:
+            total_prompt_tokens += response.usage.prompt_tokens or 0
+            total_completion_tokens += response.usage.completion_tokens or 0
+
+        # Update heartbeat (in-memory + on-disk for dashboard)
+        if agent_name:
+            import time as _time
+            hb = {
+                "last_response": _time.time(),
+                "turn": turn + 1,
+                "max_turns": max_turns,
+            }
+            _agent_heartbeats[agent_name] = hb
+            try:
+                hb_file = _PROJECT_DIR / "config" / "agent_heartbeats.json"
+                # Merge with existing heartbeats
+                existing = {}
+                if hb_file.exists():
+                    existing = json.loads(hb_file.read_text())
+                existing[agent_name] = hb
+                hb_file.write_text(json.dumps(existing))
+            except Exception:
+                pass
 
         choice = response.choices[0]
         message = choice.message
@@ -216,7 +276,8 @@ async def run_agent(
         if choice.finish_reason != "tool_calls" or not message.tool_calls:
             # If model stopped with content, return it
             if message.content:
-                return message.content
+                cost = _calc_cost(model, total_prompt_tokens, total_completion_tokens)
+                return message.content, cost
             # Model stopped without content after tool calls — nudge it
             messages.append({
                 "role": "user",
@@ -250,18 +311,22 @@ async def run_agent(
                 })
 
     logger.warning("Agent reached max turns (%d)", max_turns)
+    cost = _calc_cost(model, total_prompt_tokens, total_completion_tokens)
     for msg in reversed(messages):
         if msg.get("role") == "assistant" and msg.get("content"):
-            return msg["content"]
-    return ""
+            return msg["content"], cost
+    return "", cost
 
 
 async def run_completion(
     prompt: str,
     system_prompt: str,
-    model: str = "gemini-2.5-flash",
-) -> str:
-    """Simple text completion — no tool use. For shadow analyzer."""
+    model: str = COMPLETION_MODEL,
+) -> tuple[str, float]:
+    """Simple text completion — no tool use. For shadow analyzer.
+
+    Returns (text_response, cost_usd).
+    """
     client = _get_llm_client()
 
     response = await client.chat.completions.create(
@@ -273,4 +338,9 @@ async def run_completion(
         temperature=0.1,
     )
 
-    return response.choices[0].message.content or ""
+    cost = 0.0
+    if response.usage:
+        cost = _calc_cost(model, response.usage.prompt_tokens or 0,
+                          response.usage.completion_tokens or 0)
+
+    return response.choices[0].message.content or "", cost

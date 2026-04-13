@@ -114,6 +114,18 @@ async def add_score(event: ScoreEvent):
             await _redirect_session(id_type, id_value, event.token, event.ja3, score)
             redirected = True
 
+    # If already in shadow, refresh TTL so they stay until 5 min of inactivity
+    if not redirected:
+        already_shadow = False
+        if event.token and await pool.exists(f"shadow:token:{event.token}"):
+            await pool.expire(f"shadow:token:{event.token}", SHADOW_REDIRECT_TTL)
+            already_shadow = True
+        if event.ja3 and await pool.exists(f"shadow:ja3:{event.ja3}"):
+            await pool.expire(f"shadow:ja3:{event.ja3}", SHADOW_REDIRECT_TTL)
+            already_shadow = True
+        if already_shadow:
+            redirected = True  # still in shadow
+
     return {
         "points_added": points,
         "identifiers": [

@@ -34,7 +34,7 @@ Attackers have been redirected here — every request you see is from a suspecte
 Your job: determine if any request-response pair shows a SUCCESSFUL attack.
 Not just attempts — look for evidence that the attacker actually GOT something they shouldn't have.
 
-## Shadow access logs (last 15 seconds)
+## Shadow access logs (last cycle)
 {log_entries}
 
 ## What to look for
@@ -55,7 +55,7 @@ internal API responses)
 {{
   "attacks_detected": [
     {{
-      "type": "data_leakage|privilege_escalation|injection|business_logic|credential_theft|ssrf|flag_capture",
+      "type": "data_leakage|broken_access_control|privilege_escalation|authentication_bypass|injection|command_execution|business_logic|credential_theft|ssrf|xss|directory_traversal|information_disclosure|ai_exploitation",
       "severity": "critical|high|medium",
       "request": "the suspicious request line",
       "evidence": "what in the response proves the attack succeeded",
@@ -86,19 +86,35 @@ class ShadowAnalyzer:
         cost_governor: CostGovernor,
         interval: float = 15.0,
         on_exploit_detected=None,
+        on_cycle_complete=None,
+        max_new_entries: int = 100,
+        max_context_entries: int = 20,
     ):
         self.shadow_log_path = shadow_log_path
         self.cost_governor = cost_governor
         self.interval = interval
         self.on_exploit_detected = on_exploit_detected  # callback
+        self.on_cycle_complete = on_cycle_complete      # callback(n_new, n_attacks)
+        self.max_new_entries = max_new_entries
+        self.max_context_entries = max_context_entries
+        self.early_trigger_lines = max_new_entries - max_context_entries
         self._last_position = 0
         self._last_activity = 0.0  # timestamp of last shadow log entry seen
         self._running = False
         self._active = False       # currently analyzing (not idle)
 
+    SYSTEM_PROMPT = (
+        "You are a security analyst. Analyze access logs to detect "
+        "successful attacks. Respond with JSON only. Be conservative — "
+        "only flag attacks where the response PROVES success."
+    )
+
     @property
     def active(self) -> bool:
         return self._active
+
+    def get_system_prompt(self) -> str:
+        return self.SYSTEM_PROMPT
 
     async def run(self) -> None:
         """Main loop — analyze shadow logs every interval seconds.
@@ -125,10 +141,31 @@ class ShadowAnalyzer:
                 logger.error("Shadow analysis cycle failed: %s", e)
 
             if self._active:
-                await asyncio.sleep(self.interval)
+                await self._wait_for_interval_or_burst()
             else:
                 # Idle: just check for new lines without calling LLM
                 await self._wait_for_activity()
+
+    async def _wait_for_interval_or_burst(self) -> None:
+        """Wait up to self.interval seconds, but trigger early if
+        early_trigger_lines new log lines accumulate."""
+        deadline = time.time() + self.interval
+        while self._running and time.time() < deadline:
+            if self.shadow_log_path.exists():
+                try:
+                    size = self.shadow_log_path.stat().st_size
+                    if size > self._last_position:
+                        # Count new lines without consuming them
+                        with open(self.shadow_log_path, "r") as f:
+                            f.seek(self._last_position)
+                            new_data = f.read(size - self._last_position)
+                        n_new = sum(1 for line in new_data.splitlines() if line.strip())
+                        if n_new >= self.early_trigger_lines:
+                            logger.info("Shadow Analyzer early trigger: %d new lines", n_new)
+                            return
+                except OSError:
+                    pass
+            await asyncio.sleep(1)
 
     async def _wait_for_activity(self) -> None:
         """Poll for new shadow log lines without calling LLM.
@@ -156,7 +193,7 @@ class ShadowAnalyzer:
             if self._last_position > 0:
                 f.seek(0)
                 all_prior = f.read(self._last_position).splitlines()
-                context_lines = all_prior[-20:] if len(all_prior) >= 20 else all_prior
+                context_lines = all_prior[-self.max_context_entries:] if len(all_prior) >= self.max_context_entries else all_prior
 
             # Read new lines from where we left off
             f.seek(self._last_position)
@@ -182,9 +219,9 @@ class ShadowAnalyzer:
             logger.warning("Budget exceeded, skipping shadow analysis")
             return True  # had data, just can't afford to analyze
 
-        # Truncate new entries if too many (keep last 100)
-        if len(new_entries) > 100:
-            new_entries = new_entries[-100:]
+        # Truncate new entries if too many
+        if len(new_entries) > self.max_new_entries:
+            new_entries = new_entries[-self.max_new_entries:]
 
         # Truncate long fields (JWTs, response bodies) to reduce prompt size
         def _truncate_entry(line: str) -> str:
@@ -200,6 +237,11 @@ class ShadowAnalyzer:
         context_entries = [_truncate_entry(e) for e in context_entries]
         new_entries = [_truncate_entry(e) for e in new_entries]
 
+        # Collapse consecutive identical requests (same method+path+status)
+        # to reduce prompt size for brute-force / enumeration floods
+        new_entries = self._dedup_entries(new_entries)
+        context_entries = self._dedup_entries(context_entries)
+
         entries = context_entries + new_entries
 
         # Mark context vs new so the LLM focuses on new but has context
@@ -214,17 +256,14 @@ class ShadowAnalyzer:
             log_text = "\n".join(new_entries)
         prompt = ANALYSIS_PROMPT.format(log_entries=log_text)
 
-        system_prompt = (
-            "You are a security analyst. Analyze access logs to detect "
-            "successful attacks. Respond with JSON only. Be conservative — "
-            "only flag attacks where the response PROVES success."
-        )
+        system_prompt = self.SYSTEM_PROMPT
 
         response_text = ""
+        actual_cost = 0.0
         max_retries = 3
         for attempt in range(max_retries):
             try:
-                response_text = await run_completion(
+                response_text, actual_cost = await run_completion(
                     prompt=prompt,
                     system_prompt=system_prompt,
                 )
@@ -239,7 +278,7 @@ class ShadowAnalyzer:
                 else:
                     return True  # had data, LLM call just failed
 
-        self.cost_governor.record_spend("shadow_analysis", HAIKU_COST_PER_CALL)
+        self.cost_governor.record_spend("shadow_analysis", actual_cost)
 
         # Parse response
         try:
@@ -257,9 +296,14 @@ class ShadowAnalyzer:
                 "Shadow analysis: no successful attacks in %d entries",
                 result.get("total_requests_analyzed", len(entries)),
             )
+            if self.on_cycle_complete:
+                await self.on_cycle_complete(n_new, 0)
             return True
 
         # Exploits detected!
+        if self.on_cycle_complete:
+            await self.on_cycle_complete(n_new, len(attacks))
+
         for attack in attacks:
             logger.warning(
                 "SHADOW EXPLOIT DETECTED: type=%s severity=%s vuln=%s",
@@ -271,6 +315,49 @@ class ShadowAnalyzer:
                 await self.on_exploit_detected(attack)
 
         return True
+
+    @staticmethod
+    def _dedup_entries(entries: list[str]) -> list[str]:
+        """Collapse consecutive log lines with same method+path+status.
+
+        E.g. 100 identical 'POST /check-otp 500' lines become:
+        'POST /check-otp 500 [x100, bodies varied: otp=4601..4700]'
+        plus one sample line with full detail.
+        """
+        import re
+        if not entries:
+            return entries
+
+        def _signature(line: str) -> str:
+            """Extract method+path+status as grouping key."""
+            m = re.search(r'"(GET|POST|PUT|DELETE|PATCH)\s+(\S+)\s+\S+"\s+(\d+)', line)
+            return f"{m.group(1)} {m.group(2)} {m.group(3)}" if m else ""
+
+        result = []
+        i = 0
+        while i < len(entries):
+            sig = _signature(entries[i])
+            if not sig:
+                result.append(entries[i])
+                i += 1
+                continue
+
+            # Count consecutive entries with same signature
+            j = i + 1
+            while j < len(entries) and _signature(entries[j]) == sig:
+                j += 1
+
+            count = j - i
+            if count <= 2:
+                # Not worth collapsing
+                result.extend(entries[i:j])
+            else:
+                # Keep first entry as sample, summarize the rest
+                result.append(entries[i])
+                result.append(f"  [... repeated {count - 1} more times with same {sig}, varying request bodies]")
+            i = j
+
+        return result
 
     def stop(self):
         self._running = False

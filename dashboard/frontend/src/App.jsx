@@ -6,6 +6,7 @@ import KanbanBoard from "./components/KanbanBoard";
 import CodeDiff from "./components/CodeDiff";
 import VulnStatus from "./components/VulnStatus";
 import CostsView from "./components/CostsView";
+import AgentStatusBar from "./components/AgentStatusBar";
 
 const TABS = [
   { id: "logs", label: "Logs" },
@@ -24,6 +25,7 @@ export default function App() {
   const [shadowLogs, setShadowLogs] = useState([]);
   const [events, setEvents] = useState([]);
   const [audit, setAudit] = useState([]);
+  const [pipelineTickets, setPipelineTickets] = useState([]);
   const [patches, setPatches] = useState([]);
   const [status, setStatus] = useState(null);
   const [vulns, setVulns] = useState([]);
@@ -34,6 +36,7 @@ export default function App() {
     fetch("/api/logs/recent?env=shadow&limit=100").then(r => r.json()).then(setShadowLogs).catch(() => {});
     fetch("/api/events").then(r => r.json()).then(setEvents).catch(() => {});
     fetch("/api/audit").then(r => r.json()).then(setAudit).catch(() => {});
+    fetch("/api/pipeline").then(r => r.json()).then(setPipelineTickets).catch(() => {});
     fetch("/api/patches").then(r => r.json()).then(setPatches).catch(() => {});
     fetch("/api/status").then(r => r.json()).then(setStatus).catch(() => {});
     fetch("/api/vulns").then(r => r.json()).then(setVulns).catch(() => {});
@@ -66,7 +69,18 @@ export default function App() {
         });
         break;
       case "audit":
-        setAudit(prev => [...prev.slice(-199), msg.data]);
+        setAudit(prev => [...prev.slice(-999), msg.data]);
+        break;
+      case "pipeline_update":
+        setPipelineTickets(prev => {
+          const idx = prev.findIndex(t => t.id === msg.data.id);
+          if (idx >= 0) {
+            const next = [...prev];
+            next[idx] = msg.data;
+            return next;
+          }
+          return [...prev, msg.data];
+        });
         break;
       case "patch":
         setPatches(prev => {
@@ -91,10 +105,6 @@ export default function App() {
 
   // Classify which log paths are suspicious (watcher-flagged)
   const watcherPaths = new Set(events.map(e => e.evidence?.request_path).filter(Boolean));
-  const analyzerTypes = new Set(
-    audit.filter(a => a.action === "shadow_exploit_detected").map(a => a.detail)
-  );
-
   const shadowSessions = (status?.shadow?.redirected_tokens ?? 0) + (status?.shadow?.redirected_ja3s ?? 0);
   const totalEvents = events.length;
   const totalPatches = patches.length;
@@ -115,6 +125,7 @@ export default function App() {
       if (endpoint.includes("events")) {
         setEvents([]);
         setAudit([]);
+        setPipelineTickets([]);
         setPatches([]);
       }
     } catch {}
@@ -126,7 +137,7 @@ export default function App() {
       {/* Header */}
       <header className="bg-gray-900 border-b border-gray-800 px-4 py-2 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-3">
-          <h1 className="text-lg font-bold text-white tracking-tight">Mahoraga Defender Agent</h1>
+          <h1 className="text-lg font-bold text-white tracking-tight">Mahoraga Defender</h1>
         </div>
         <div className="flex items-center gap-6 text-sm">
           <Stat label="Events" value={totalEvents} color="amber" />
@@ -167,7 +178,7 @@ export default function App() {
                     await fetch("/api/reset/sessions", { method: "POST" });
                     await fetch("/api/reset/events", { method: "POST" });
                     await fetch("/api/reset/scoreboard", { method: "POST" });
-                    setProdLogs([]); setShadowLogs([]); setEvents([]); setAudit([]); setPatches([]);
+                    setProdLogs([]); setShadowLogs([]); setEvents([]); setAudit([]); setPipelineTickets([]); setPatches([]);
                     fetch("/api/status").then(r => r.json()).then(setStatus).catch(() => {});
                     fetch("/api/vulns").then(r => r.json()).then(setVulns).catch(() => {});
                     setResetOpen(false);
@@ -194,14 +205,17 @@ export default function App() {
             }`}
           >
             {t.label}
-            {t.id === "pipeline" && events.filter(e => e.status !== "resolved" && e.status !== "dismissed").length > 0 && (
+            {t.id === "pipeline" && pipelineTickets.filter(t => t.status !== "deployed").length > 0 && (
               <span className="ml-2 px-1.5 py-0.5 rounded-full bg-amber-600 text-xs">
-                {events.filter(e => e.status !== "resolved" && e.status !== "dismissed").length}
+                {pipelineTickets.filter(t => t.status !== "deployed").length}
               </span>
             )}
           </button>
         ))}
       </nav>
+
+      {/* Agent status bar — visible on all tabs */}
+      <AgentStatusBar audit={audit} />
 
       {/* Content */}
       <main className="flex-1 overflow-hidden bg-gray-950">
@@ -210,7 +224,6 @@ export default function App() {
             prodLogs={prodLogs}
             shadowLogs={shadowLogs}
             watcherPaths={watcherPaths}
-            analyzerTypes={analyzerTypes}
             events={events}
             audit={audit}
             shadowSessionCount={shadowSessions}
@@ -220,10 +233,10 @@ export default function App() {
           <AgentsView audit={audit} />
         )}
         {tab === "pipeline" && (
-          <KanbanBoard events={events} audit={audit} patches={patches} />
+          <KanbanBoard tickets={pipelineTickets} audit={audit} patches={patches} />
         )}
         {tab === "patches" && (
-          <CodeDiff patches={patches} audit={audit} />
+          <CodeDiff patches={patches} audit={audit} pipelineTickets={pipelineTickets} />
         )}
         {tab === "vulns" && (
           <VulnStatus vulns={vulns} patches={patches} events={events} />
