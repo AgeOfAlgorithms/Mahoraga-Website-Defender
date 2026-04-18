@@ -184,12 +184,12 @@ class Orchestrator:
                 pass
 
         # Write agent model info for dashboard
-        from harness.agents.llm_runner import AGENT_MODEL, COMPLETION_MODEL
+        from harness.agents.llm_runner import FIXER_MODEL, REVIEWER_MODEL, ANALYZER_MODEL
         agent_models = {
             "watcher": None,
-            "shadow_analyzer": COMPLETION_MODEL,
-            "fixer": AGENT_MODEL,
-            "reviewer": AGENT_MODEL,
+            "shadow_analyzer": ANALYZER_MODEL,
+            "fixer": FIXER_MODEL,
+            "reviewer": REVIEWER_MODEL,
         }
         (self.config_dir / "agent_models.json").write_text(
             json.dumps(agent_models, indent=2))

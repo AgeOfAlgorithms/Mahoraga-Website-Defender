@@ -6,9 +6,12 @@
 
 AI-powered reactive website defense system designed to withstand AI-powered hacks in real-time.
 
-## Idea
+[![GitHub stars](https://img.shields.io/github/stars/mAgeOfAlgorithms/Mahoraga-Agent?style=social)](https://github.com/AgeOfAlgorithms/Mahoraga-Agent)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://makeapullrequest.com)
 
-As AI models become more intelligent and accessible, hackers equipped with AI are rapidly becoming a major threat for any public-facing application. To combat this rise in hacker capability, defenders MUST adopt AI. AI can help defend applications either proactively or reactively.
+
+## Introduction
 
 Mahoraga Defender is a PoC of a reactive, attacker-type agnostic, real-time defense system. The core mechanism involves tricking an adversary into performing discoveries and attacks on a benign, fake environment ("shadow" environment) and logging these attacks. Then, an LLM agent reads the logs to analyze the attack(s) and hands over the analysis to more LLM agents to patch the code accordingly.
 
@@ -38,21 +41,17 @@ A pristine copy is kept in `crapi-original/` so the environment can be reset bet
 Traffic → Watcher → Shadow Redirect → Shadow Analyzer → Fixer → Reviewer → Deploy
 ```
 
-- **Orchestrator**: coordinates the entire pipeline. Manages agent lifecycles, exploit/review queues, ticket state, deployment, and crash recovery. Scales fixer/reviewer agents up and down at runtime.
-- **Watcher** (rule-based): monitors prod traffic logs and scores sessions on threat level using pattern matching (brute force, injection, enumeration, honeypot access, etc.). Once the score exceeds a threshold, the session is transparently redirected to the shadow environment via the control plane.
-- **Shadow Analyzer** (Gemini 2.5 Flash): reads shadow environment traffic logs on a configurable interval to detect successful exploits. Deduplicates log entries, detects attack patterns, and pushes confirmed exploits to the fixing queue.
-- **Fixer** (Gemini 3 Flash): receives exploit reports, reads the relevant source code, and patches it directly in `crapi-fork/`. Operates in a sandboxed bash environment with access restricted to `crapi-fork/` only.
-- **Reviewer** (Gemini 3 Flash): verifies patches for correctness, scope, and security. Approved patches are deployed automatically; rejected patches are sent back to the fixer with feedback.
+- **Orchestrator**: coordinates the entire pipeline. Manages agent lifecycles, patch/review queues, ticket state, deployment, and crash recovery. Scales fixer/reviewer agents up and down at runtime.
+- **Watcher** (rule-based): monitors prod traffic logs and scores sessions on threat level using pattern matching (brute force, injection, enumeration, honeypot access, etc.). Once the threat score exceeds a threshold, the session is transparently redirected to the shadow environment.
+- **Shadow Analyzer** (LLM): reads shadow environment traffic logs on a configurable interval to detect successful exploits. Deduplicates log entries, detects attack patterns, and pushes confirmed exploits to the fixing queue.
+- **Fixer** (LLM agent): receives exploit reports, reads the relevant source code, and patches it directly in `crapi-fork/`. Operates in a sandboxed bash environment with access restricted to `crapi-fork/` only.
+- **Reviewer** (LLM agent): verifies patches for correctness, scope, and security. Approved patches are deployed automatically; rejected patches are sent back to the fixer with feedback.
 
 On deployment, Python services are hot-reloaded via gunicorn (instant), while Java/Go services are rebuilt via `docker compose up -d --build`.
 
 **Why no Tester agent?** We considered adding a dedicated user testing agent and a separate test environment, but removed both to keep the system simple and fast.
 
-### Cost Tracking
-
-API costs are tracked from actual Gemini token usage (prompt + completion tokens). A cost governor enforces daily budgets, per-incident caps, and anomaly detection to prevent runaway spend.
-
-## Repeatable Experiment Flow
+## How to Start Experiment
 
 1. `docker compose down -v` — wipe everything
 2. `./start.sh` — resets `crapi-fork/` from `crapi-original/`, rebuilds all services, plants flags and honeypots
@@ -63,21 +62,90 @@ API costs are tracked from actual Gemini token usage (prompt + completion tokens
 
 Dashboard: http://localhost:3000
 
-| Tab | Description |
-|-----|-------------|
-| **Logs** | Real-time split-screen prod/shadow request log viewer with severity-colored entries and traffic grouping |
-| **Agents** | Per-agent activity feed with system prompts, tool calls, and LLM model labels |
-| **Pipeline** | Kanban board: Detected → Fixing → Reviewing → Deployed, with resizable detail panel |
-| **Patches** | Code diffs, files modified, rollback commands, and timeline per patch |
-| **Vulnerabilities** | 12 CTF flags with severity, patch status, and solve count per attacker |
-| **Costs** | Real-time API spend breakdown by agent and incident |
-
 A global agent status bar is visible on all tabs showing agent health (active/hung/idle/error) with scaling controls.
+
+### Logs
+Real-time split-screen prod/shadow request log viewer with severity-colored entries and traffic grouping
+
+<p align="center">
+  <img src="./img/dashboard_logs.png" width="600" />
+</p>
+
+### Agents
+Per-agent activity feed with system prompts, tool calls, and LLM model labels
+
+<p align="center">
+  <img src="./img/dashboard_agents.png" width="600" />
+</p>
+
+### Pipeline
+Kanban board: Detected → Fixing → Reviewing → Deployed, with resizable detail panel
+
+<p align="center">
+  <img src="./img/dashboard_pipeline.png" width="600" />
+</p>
+
+### Patches
+Code diffs, files modified, rollback commands, and timeline per patch
+
+<p align="center">
+  <img src="./img/dashboard_patches.png" width="600" />
+</p>
+
+
+## LLM Configuration
+
+The system uses any OpenAI-compatible API. Configure models in [`config/llm.yaml`](config/llm.yaml):
+
+```yaml
+# Shadow Analyzer — reads shadow logs to detect exploits (no tool calling)
+shadow_analyzer:
+  provider: gemini
+  model: gemini-2.5-flash
+  api_key_env: GEMINI_API_KEY # defined in harness/.env
+  pricing:
+    input_per_million: 0.30
+    output_per_million: 2.50
+
+# Fixer — patches source code (tool-calling agent)
+fixer:
+  provider: gemini
+  model: gemini-3-flash-preview
+  api_key_env: GEMINI_API_KEY # defined in harness/.env
+  pricing:
+    input_per_million: 0.50
+    output_per_million: 3.00
+
+# Reviewer — verifies patches (tool-calling agent)
+reviewer:
+  provider: gemini
+  model: gemini-3-flash-preview
+  api_key_env: GEMINI_API_KEY # defined in harness/.env
+  pricing:
+    input_per_million: 0.50
+    output_per_million: 3.00
+```
+
+To switch providers, change `provider` and `model`, then set the corresponding API key in `harness/.env`:
+
+Supported providers: OpenAI, Gemini, Anthropic, Groq, Together, Ollama, Mistral, DeepSeek, Fireworks, xAI, Perplexity, OpenRouter, Zhipu. 
+Add custom providers by adding their base URL to the `providers` section in the YAML.
+
+```yaml
+providers:
+  openai: https://api.openai.com/v1
+  gemini: https://generativelanguage.googleapis.com/v1beta/openai/
+  anthropic: https://api.anthropic.com/v1/
+  groq: https://api.groq.com/openai/v1
+  ... # add more if needed
+```
+
+Note: Only a few API providers have a high enough rate limit to support 3+ agents working simultaneously. Google's Gemini is one of them.
 
 ## Tech Stack
 
-- **LLMs**: Gemini 3 Flash Preview (fixer, reviewer), Gemini 2.5 Flash (shadow analyzer)
-- **Target App**: crAPI (Python/Django, Java/Spring Boot, Go, MongoDB, PostgreSQL)
+- **LLMs**: Any OpenAI-compatible API (default: Gemini 3 Flash Preview for agents, Gemini 2.5 Flash for analyzer)
+- **Target App**: modified crAPI (Python/Django, Java/Spring Boot, Go, MongoDB, PostgreSQL)
 - **Routing**: nginx with Lua scripting for transparent session redirection
 - **Scoring**: Redis-backed threat scoring via Flask control plane
 - **Dashboard**: React + Tailwind CSS, served by FastAPI with WebSocket for live updates

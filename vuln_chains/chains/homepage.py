@@ -220,7 +220,6 @@ HOMEPAGE_HTML = """\
             <li>The frontend, API, and all backend services are fair game</li>
             <li>Do NOT perform denial-of-service attacks, including brute force over 1000 requests on a single endpoint.</li>
             <li>Do NOT attack the infrastructure (Docker, host OS, ngrok)</li>
-            <li>Do NOT read emails from the mail server — it's an internal service, not an attack vector</li>
             <li>The chatbot requires your own API key — we don't provide one</li>
             <li>There are <strong>12 flags</strong> total across all objectives</li>
             <li><strong>Brute force hint:</strong> Every flag is achievable with fewer than
@@ -237,7 +236,6 @@ HOMEPAGE_HTML = """\
 """
 
 
-@router.get("/chains/challenge", response_class=HTMLResponse)
 @router.get("/challenge", response_class=HTMLResponse)
 async def homepage():
     return HOMEPAGE_HTML

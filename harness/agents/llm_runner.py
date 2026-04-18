@@ -160,36 +160,81 @@ def _execute_command(command: str, timeout: int = 60) -> str:
         return f"Error executing command: {e}"
 
 
-def _get_llm_client() -> AsyncOpenAI:
-    """Create LLM client via OpenAI-compatible API."""
-    import httpx
-    api_key = os.environ.get("GEMINI_API_KEY", "")
-    if not api_key:
-        raise ValueError("GEMINI_API_KEY not set in environment")
-    return AsyncOpenAI(
-        api_key=api_key,
-        base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-        timeout=httpx.Timeout(connect=15.0, read=120.0, write=30.0, pool=15.0),
-        max_retries=3,
-    )
+# ── LLM config (loaded from config/llm.yaml) ────────────────────
 
+def _load_llm_config() -> dict:
+    """Load LLM config from config/llm.yaml."""
+    import yaml
+    config_path = _PROJECT_DIR / "config" / "llm.yaml"
+    if config_path.exists():
+        with open(config_path) as f:
+            return yaml.safe_load(f) or {}
+    return {}
 
-AGENT_MODEL = "gemini-3-flash-preview"
-COMPLETION_MODEL = "gemini-2.5-flash"
+_llm_config = _load_llm_config()
+
+# Resolve model names and pricing from config
+FIXER_MODEL = _llm_config.get("fixer", {}).get("model", "gemini-3-flash-preview")
+REVIEWER_MODEL = _llm_config.get("reviewer", {}).get("model", "gemini-3-flash-preview")
+ANALYZER_MODEL = _llm_config.get("shadow_analyzer", {}).get("model", "gemini-2.5-flash")
+
+# Backward compat aliases
+AGENT_MODEL = FIXER_MODEL
+COMPLETION_MODEL = ANALYZER_MODEL
+
+MODEL_PRICING = {}
+for role in ("fixer", "reviewer", "shadow_analyzer"):
+    cfg = _llm_config.get(role, {})
+    p = cfg.get("pricing", {})
+    if p:
+        MODEL_PRICING[cfg.get("model", "")] = {
+            "input": p.get("input_per_million", 0),
+            "output": p.get("output_per_million", 0),
+        }
 
 # Per-agent heartbeat tracking: agent_name → {last_response_time, turn, event_id}
 _agent_heartbeats: dict[str, dict] = {}
 
-# Pricing per million tokens (USD)
-MODEL_PRICING = {
-    "gemini-3-flash-preview": {"input": 0.50, "output": 3.00},
-    "gemini-2.5-flash": {"input": 0.30, "output": 2.50},
-}
+# Cache clients per role to avoid creating new connections each call
+_llm_clients: dict[str, AsyncOpenAI] = {}
+
+
+def _get_llm_client(role: str = "fixer") -> AsyncOpenAI:
+    """Create or return cached LLM client for a given role (fixer/reviewer/shadow_analyzer)."""
+    if role in _llm_clients:
+        return _llm_clients[role]
+
+    import httpx
+    cfg = _llm_config.get(role, _llm_config.get("fixer", {}))
+    api_key_env = cfg.get("api_key_env", "GEMINI_API_KEY")
+    api_key = os.environ.get(api_key_env, "")
+    if not api_key:
+        raise ValueError(f"{api_key_env} not set in environment (needed for '{role}' LLM)")
+
+    # Resolve base_url: explicit on role > provider lookup from config > error
+    base_url = cfg.get("base_url")
+    if not base_url:
+        provider = cfg.get("provider", "").lower()
+        providers = _llm_config.get("providers", {})
+        base_url = providers.get(provider)
+    if not base_url:
+        raise ValueError(
+            f"No base_url or provider set for '{role}' in config/llm.yaml."
+        )
+
+    client = AsyncOpenAI(
+        api_key=api_key,
+        base_url=base_url,
+        timeout=httpx.Timeout(connect=15.0, read=120.0, write=30.0, pool=15.0),
+        max_retries=3,
+    )
+    _llm_clients[role] = client
+    return client
 
 
 def _calc_cost(model: str, prompt_tokens: int, completion_tokens: int) -> float:
     """Calculate cost in USD from token counts."""
-    pricing = MODEL_PRICING.get(model, MODEL_PRICING.get(AGENT_MODEL))
+    pricing = MODEL_PRICING.get(model)
     if not pricing:
         return 0.0
     return (prompt_tokens * pricing["input"] + completion_tokens * pricing["output"]) / 1_000_000
@@ -202,12 +247,13 @@ async def run_agent(
     model: str = AGENT_MODEL,
     on_tool_call: callable = None,
     agent_name: str = "",
+    role: str = "fixer",
 ) -> tuple[str, float]:
     """Run an LLM agent with sandboxed bash tool access.
 
     Returns (final_text_response, total_cost_usd).
     """
-    client = _get_llm_client()
+    client = _get_llm_client(role)
 
     total_prompt_tokens = 0
     total_completion_tokens = 0
@@ -327,7 +373,7 @@ async def run_completion(
 
     Returns (text_response, cost_usd).
     """
-    client = _get_llm_client()
+    client = _get_llm_client("shadow_analyzer")
 
     response = await client.chat.completions.create(
         model=model,

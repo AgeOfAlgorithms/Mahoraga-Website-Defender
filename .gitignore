@@ -3,13 +3,20 @@
 harness/.env
 
 # Runtime artifacts
-logs/nginx/access.log
-logs/nginx/error.log
-logs/nginx/shadow.log
+logs/
 events/*.json
 audit/*.json
 patches/*.json
+pipeline/*.json
+config/agent_heartbeats.json
+config/agent_models.json
+config/agent_counts.json
 reactive_defender.log
+
+# Scratch / debug
+test_*.py
+*_views.py
+*_impl.txt
 
 # Python
 __pycache__/

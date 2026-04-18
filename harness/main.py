@@ -34,6 +34,9 @@ def setup_logging(verbose: bool = False) -> None:
             logging.FileHandler("reactive_defender.log"),
         ],
     )
+    # Silence noisy third-party loggers that dump full HTTP payloads
+    for name in ("openai", "httpcore", "httpx"):
+        logging.getLogger(name).setLevel(logging.WARNING)
 
 
 def main() -> None:

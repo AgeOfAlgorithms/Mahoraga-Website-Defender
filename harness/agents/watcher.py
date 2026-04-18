@@ -63,6 +63,27 @@ GENERIC_PATTERNS: list[tuple[str, re.Pattern, Severity]] = [
         re.compile(r"""(__proto__|constructor\[|prototype\[)"""),
         Severity.CRITICAL,
     ),
+    (
+        "ssrf_redirect_service",
+        re.compile(
+            r"""(?i)(httpbin\.org/redirect|requestbin\.net|webhook\.site|"""
+            r"""burpcollaborator\.net|interact\.sh|oastify\.com|"""
+            r"""canarytokens\.com|pipedream\.net|hookbin\.com|"""
+            r"""redirect-to\?url=|follow-redirect)""",
+        ),
+        Severity.CRITICAL,
+    ),
+    (
+        "ssrf_internal_url",
+        re.compile(
+            r"""(?i)(https?://(localhost|127\.0\.0\.1|0\.0\.0\.0|"""
+            r"""10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|"""
+            r"""192\.168\.\d+\.\d+|169\.254\.\d+\.\d+|"""
+            r"""metadata\.google|metadata\.aws|100\.100\.100\.200|"""
+            r"""\[::1?\])[:/])""",
+        ),
+        Severity.HIGH,
+    ),
 ]
 
 

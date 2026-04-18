@@ -47,9 +47,10 @@ for this specific fix. The patch must be laser-focused.
 (they are host filesystem paths, not container paths).
 
 ## Verification
-Use `docker exec` to read the patched file inside the container and verify \
-the change looks correct. Check that the fix is syntactically valid and \
-wouldn't cause import errors or runtime crashes.
+The "diff" field above contains an approximate diff of the code changes. \
+Use it to understand the intent of the patch, but ALWAYS read the actual \
+patched file from crapi-fork/ on the host filesystem to verify correctness. \
+Check that the fix is syntactically valid and wouldn't cause runtime crashes.
 
 ## Response format (JSON only, no markdown fencing)
 {{
@@ -112,6 +113,7 @@ class Reviewer:
                         system_prompt=SYSTEM_PROMPT,
                         max_turns=15,
                         on_tool_call=on_tool_call,
+                        role="reviewer",
                     ),
                     timeout=180,  # 3 minute hard cap per attempt
                 )

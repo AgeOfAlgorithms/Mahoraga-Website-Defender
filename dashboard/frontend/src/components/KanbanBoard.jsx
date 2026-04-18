@@ -144,17 +144,22 @@ export default function KanbanBoard({ tickets = [], audit, patches }) {
               {columns[col.id].map(ticket => {
                 const isSelected = selected?.id === ticket.id;
                 const isActive = ticket.status === "fixing" || ticket.status === "reviewing";
+                const isReviewing = ticket.status === "reviewing";
                 return (
                   <div
                     key={ticket.id}
                     onClick={() => setSelected(isSelected ? null : ticket)}
                     className={`kanban-card p-2.5 rounded cursor-pointer border ${
                       isSelected && isActive
-                        ? "border-blue-400 bg-amber-950/40 ring-1 ring-blue-500/40"
+                        ? isReviewing
+                          ? "border-blue-400 bg-purple-950/40 ring-1 ring-blue-500/40"
+                          : "border-blue-400 bg-amber-950/40 ring-1 ring-blue-500/40"
                         : isSelected
                           ? "border-blue-500 bg-blue-950/30"
                           : isActive
-                            ? "border-amber-500/70 bg-amber-950/30 ring-1 ring-amber-500/30"
+                            ? isReviewing
+                              ? "border-purple-500/70 bg-purple-950/30 ring-1 ring-purple-500/30"
+                              : "border-amber-500/70 bg-amber-950/30 ring-1 ring-amber-500/30"
                             : "border-gray-700/50 bg-gray-800/80 hover:border-gray-600"
                     }`}
                   >
@@ -180,8 +185,8 @@ export default function KanbanBoard({ tickets = [], audit, patches }) {
                       </span>
                     )}
                     {isActive && (
-                      <span className="text-[9px] text-amber-400 mt-0.5 flex items-center gap-1">
-                        <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                      <span className={`text-[9px] mt-0.5 flex items-center gap-1 ${isReviewing ? "text-purple-400" : "text-amber-400"}`}>
+                        <span className={`inline-block w-1.5 h-1.5 rounded-full animate-pulse ${isReviewing ? "bg-purple-400" : "bg-amber-400"}`} />
                         in progress
                       </span>
                     )}

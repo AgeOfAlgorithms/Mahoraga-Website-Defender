@@ -132,6 +132,8 @@ class Fixer:
 
     def __init__(self, cost_governor: CostGovernor):
         self.cost_governor = cost_governor
+        # Cache of file contents before patching — initialized once, updated after each patch
+        self._file_cache: dict[str, str] = {}
 
     def _pre_read_source(self, triage) -> str:
         """Pre-read relevant source files based on the exploit details."""
@@ -200,6 +202,9 @@ class Fixer:
         if on_prompt_built:
             on_prompt_built(SYSTEM_PROMPT, prompt)
 
+        from pathlib import Path
+        crapi_root = Path(__file__).resolve().parent.parent.parent / "crapi-fork"
+
         max_retries = 3
         response_text = ""
         actual_cost = 0.0
@@ -259,6 +264,36 @@ class Fixer:
         service = data.get("service", data.get("container", "unknown"))
         files_modified = data.get("files_modified", [])
 
+        # Generate unified diff from cached before vs current after
+        import difflib
+        diff_text = ""
+        for rel_path in files_modified:
+            full = crapi_root / rel_path
+            # Lazily populate cache on first access
+            if rel_path not in self._file_cache:
+                try:
+                    self._file_cache[rel_path] = full.read_text() if full.exists() else ""
+                except Exception:
+                    self._file_cache[rel_path] = ""
+            before = self._file_cache[rel_path]
+            try:
+                after = full.read_text() if full.exists() else ""
+            except Exception:
+                after = ""
+            if before != after:
+                udiff = difflib.unified_diff(
+                    before.splitlines(keepends=True),
+                    after.splitlines(keepends=True),
+                    fromfile=f"a/{rel_path}",
+                    tofile=f"b/{rel_path}",
+                )
+                diff_text += "".join(udiff)
+                # Update cache to current state for next patch
+                self._file_cache[rel_path] = after
+        # Fall back to LLM summary if no diff captured
+        if not diff_text.strip():
+            diff_text = data.get("changes_summary", "")
+
         logger.info(
             "Patch applied to %s: %s (%s)",
             service, data.get("description", ""), files_modified,
@@ -268,7 +303,7 @@ class Fixer:
             event_id=triage.event_id,
             patch_type=data.get("patch_type", "code_fix"),
             description=data.get("description", ""),
-            diff=data.get("changes_summary", ""),
+            diff=diff_text,
             files_modified=files_modified,
             rollback_steps=data.get("rollback", f"docker compose up -d --build {service}"),
         )

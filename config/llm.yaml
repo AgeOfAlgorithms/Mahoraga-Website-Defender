@@ -1,0 +1,48 @@
+# LLM configuration — one entry per agent role.
+# Any OpenAI-compatible API works. Just set provider + model + api_key_env.
+#
+# Or set base_url directly on a role to skip provider lookup.
+
+# Known providers and their OpenAI-compatible base URLs.
+# Add your own or override existing ones here.
+providers:
+  openai: https://api.openai.com/v1
+  gemini: https://generativelanguage.googleapis.com/v1beta/openai/
+  anthropic: https://api.anthropic.com/v1/
+  groq: https://api.groq.com/openai/v1
+  together: https://api.together.xyz/v1
+  ollama: http://localhost:11434/v1
+  mistral: https://api.mistral.ai/v1
+  deepseek: https://api.deepseek.com
+  fireworks: https://api.fireworks.ai/inference/v1
+  xai: https://api.x.ai/v1
+  perplexity: https://api.perplexity.ai
+  openrouter: https://openrouter.ai/api/v1
+  zhipu: https://open.bigmodel.cn/api/paas/v4/
+
+# Shadow Analyzer — reads shadow logs to detect exploits (no tool calling)
+shadow_analyzer:
+  provider: gemini
+  model: gemini-2.5-flash
+  api_key_env: GEMINI_API_KEY
+  pricing:
+    input_per_million: 0.30
+    output_per_million: 2.50
+
+# Fixer — patches source code (tool-calling agent)
+fixer:
+  provider: gemini
+  model: gemini-3-flash-preview
+  api_key_env: GEMINI_API_KEY
+  pricing:
+    input_per_million: 0.50
+    output_per_million: 3.00
+
+# Reviewer — verifies patches (tool-calling agent)
+reviewer:
+  provider: gemini
+  model: gemini-3-flash-preview
+  api_key_env: GEMINI_API_KEY
+  pricing:
+    input_per_million: 0.50
+    output_per_million: 3.00

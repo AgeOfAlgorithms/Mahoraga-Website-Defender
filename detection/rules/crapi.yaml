@@ -104,7 +104,7 @@ rules:
     description: "Attacker used the decoy tech API key from /internal/users/export"
 
   - name: decoy_order_ref_usage
-    pattern: 'ord-ref-VT\d{4}-intl'
+    pattern: 'ord-ref-VT\d{4}-[a-f0-9]{8}'
     severity: high
     description: "Attacker used the decoy internal order reference"
 
@@ -127,6 +127,12 @@ rules:
     pattern: 'cto@vehitrack\.io'
     severity: critical
     description: "Login attempt with decoy CTO account from /internal/users/export"
+
+  # ── Internal services accessed directly ─────────────────────────
+  - name: mailhog_access
+    pattern: '/mailhog/'
+    severity: critical
+    description: "Direct access to internal mail server — instant shadow redirect"
 
   # ── Nginx-level honeypots (existing) ────────────────────────────
   - name: honeypot_dotenv

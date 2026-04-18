@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
 
 const SEVERITY_RANK = { critical: 4, high: 3, medium: 2, low: 1, info: 0 };
 function severityRank(sev) { return SEVERITY_RANK[(sev || "").toLowerCase()] || 0; }
@@ -83,32 +83,41 @@ export default function LogViewer({ prodLogs, shadowLogs, watcherPaths, events, 
   }, [events]);
 
   // Auto-scroll
+  // Incremental grouping — only process new entries since last render
+  const groupCache = useRef({ processed: 0, grouped: [], filter: "" });
+
   const filteredLogs = useMemo(() => {
-    const filtered = !filter ? logs : logs.filter(l => {
-      const q = filter.toLowerCase();
-      return (
-        l.path?.toLowerCase().includes(q) ||
-        l.method?.toLowerCase().includes(q) ||
-        String(l.status).includes(q) ||
-        l.ip?.includes(q)
-      );
-    });
+    const cache = groupCache.current;
+    // Full rebuild if filter changed or logs were reset (shrunk)
+    if (cache.filter !== filter || logs.length < cache.processed) {
+      cache.processed = 0;
+      cache.grouped = [];
+      cache.filter = filter;
+    }
 
-    // Group nearby identical requests (same method+path+ip+status)
-    // Looks back up to 4 entries to merge interleaved patterns (e.g. v2/v3 alternating)
-    const grouped = [];
-    const idCounts = {};
     const LOOKBACK = 4;
+    const q = filter ? filter.toLowerCase() : "";
 
-    for (const entry of filtered) {
+    // Only process entries we haven't seen yet
+    for (let idx = cache.processed; idx < logs.length; idx++) {
+      const entry = logs[idx];
+
+      // Filter
+      if (q && !(
+        entry.path?.toLowerCase().includes(q) ||
+        entry.method?.toLowerCase().includes(q) ||
+        String(entry.status).includes(q) ||
+        entry.ip?.includes(q)
+      )) continue;
+
+      // Assign stable ID
       if (!entry._id) {
-        const base = `${entry.time}|${entry.method}|${entry.path}|${entry.ip}|${entry.status}|${entry.env || "prod"}`;
-        idCounts[base] = (idCounts[base] || 0) + 1;
-        entry._id = `${base}#${idCounts[base]}`;
+        entry._id = `${entry.time}|${entry.method}|${entry.path}|${entry.ip}|${entry.status}|${entry.env || "prod"}|${idx}`;
       }
 
-      // Search recent entries for a matching group to merge into
+      // Try to merge into a recent group
       let merged = false;
+      const grouped = cache.grouped;
       const searchStart = Math.max(0, grouped.length - LOOKBACK);
       for (let i = grouped.length - 1; i >= searchStart; i--) {
         const candidate = grouped[i];
@@ -124,11 +133,9 @@ export default function LogViewer({ prodLogs, shadowLogs, watcherPaths, events, 
             candidate._lastTime = entry.time;
             if (candidate._samples.length < 8) candidate._samples.push(entry);
           } else {
-            // Convert single entry to group
-            const groupSig = `group_${entry.method}|${entry.path}|${entry.ip}|${entry.status}|${entry.env || "prod"}`;
             grouped[i] = {
               ...entry,
-              _id: groupSig,
+              _id: `group_${candidate._id}`,
               _group: true,
               _count: 2,
               _firstTime: candidate.time,
@@ -144,7 +151,10 @@ export default function LogViewer({ prodLogs, shadowLogs, watcherPaths, events, 
         grouped.push(entry);
       }
     }
-    return grouped;
+    cache.processed = logs.length;
+
+    // Return a new array ref only if length changed (triggers React re-render)
+    return [...cache.grouped];
   }, [logs, filter]);
 
   const toggleExpand = (idx) => {
@@ -230,7 +240,7 @@ export default function LogViewer({ prodLogs, shadowLogs, watcherPaths, events, 
   );
 }
 
-function LogRow({ entry, idx, expanded, toggleExpand, getRowClass, eventsByPath }) {
+const LogRow = React.memo(function LogRow({ entry, idx, expanded, toggleExpand, getRowClass, eventsByPath }) {
   const isGroup = entry._group;
   const isExpanded = expanded.has(idx);
 
@@ -291,7 +301,7 @@ function LogRow({ entry, idx, expanded, toggleExpand, getRowClass, eventsByPath 
       )}
     </div>
   );
-}
+});
 
 function GroupDetail({ entry }) {
   const samples = entry._samples || [];
