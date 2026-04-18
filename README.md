@@ -4,11 +4,15 @@
   <img src="./img/mahoraga.jpg" width="300" />
 </p>
 
+<p align="center">
 AI-powered reactive website defense system designed to withstand AI-powered hacks in real-time.
+</p>
 
-[![GitHub stars](https://img.shields.io/github/stars/mAgeOfAlgorithms/Mahoraga-Agent?style=social)](https://github.com/AgeOfAlgorithms/Mahoraga-Agent)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://makeapullrequest.com)
+<p align="center">
+  <a href="https://github.com/AgeOfAlgorithms/Mahoraga-Agent"><img src="https://img.shields.io/github/stars/AgeOfAlgorithms/Mahoraga-Agent?style=social" alt="GitHub stars"></a>
+  <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
+  <a href="https://makeapullrequest.com"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs Welcome"></a>
+</p>
 
 
 ## Introduction

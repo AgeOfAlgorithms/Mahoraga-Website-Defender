@@ -7,7 +7,7 @@ const SEVERITY_COLORS = {
   critical: "bg-red-900/60 border-l-4 border-red-500",
   high: "bg-orange-900/40 border-l-4 border-orange-500",
   medium: "bg-amber-900/30 border-l-4 border-amber-500",
-  low: "bg-yellow-900/20 border-l-4 border-yellow-600",
+  low: "bg-sky-900/20 border-l-4 border-sky-500",
   info: "",
 };
 
@@ -207,7 +207,7 @@ export default function LogViewer({ prodLogs, shadowLogs, watcherPaths, events, 
         <div className="flex gap-3 text-xs text-gray-500 ml-2">
           <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-red-500" /> Critical/High</span>
           <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-amber-500" /> Medium</span>
-          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-yellow-600" /> Low</span>
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-sky-500" /> Low</span>
           <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-purple-500" /> Honeypot</span>
         </div>
       </div>
