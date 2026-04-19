@@ -12,6 +12,7 @@ config/agent_heartbeats.json
 config/agent_models.json
 config/agent_counts.json
 reactive_defender.log
+test_logs/
 
 # Scratch / debug
 test_*.py

@@ -1,6 +1,6 @@
 """Homepage — pentester briefing and objective listing.
 
-Accessible at /chains/home. Explains the CTF-style objectives
+Accessible at /challenge. Explains the CTF-style objectives
 without revealing the specific vulnerabilities.
 """
 
@@ -133,43 +133,68 @@ HOMEPAGE_HTML = """\
         </p>
     </div>
 
-    <h2>Objectives</h2>
+    <h2>Flags — 12 Total</h2>
 
     <div class="card">
-        <h3>1. Unauthorized Data Access <span class="score">3 flags</span></h3>
-        <p>Access data belonging to other users — vehicles, reports, profiles.
-        Prove it by finding planted secrets in the data or submitting proof of access.</p>
+        <h3>1. <span class="score">Where other people park</span></h3>
+        <p>Find another user's vehicle location.</p>
     </div>
 
     <div class="card">
-        <h3>2. Account Takeover <span class="score">2 flags</span></h3>
-        <p>Take over another user's account. There's more than one way in.
-        The OTP system uses short numeric codes. Prove it by accessing the victim's data.</p>
+        <h3>2. <span class="score">What the mechanic wrote</span></h3>
+        <p>Read a mechanic's service report that wasn't written for you.</p>
     </div>
 
     <div class="card">
-        <h3>3. Privilege Escalation <span class="score">2 flags</span></h3>
-        <p>Gain admin or elevated access you shouldn't have.
-        The flag is returned when you access admin-only resources.</p>
+        <h3>3. <span class="score">Someone else's home video</span></h3>
+        <p>Mess with another user's video.</p>
     </div>
 
     <div class="card">
-        <h3>4. Injection &amp; Manipulation <span class="score">2 flags</span></h3>
-        <p>Exploit input handling flaws — the application doesn't always validate
-        what you send it. Prove it by triggering server errors or manipulating data.</p>
+        <h3>4. <span class="score">Forgot your password?</span></h3>
+        <p>Take over another user's account through the password reset flow, which uses codes that are far too short.</p>
     </div>
 
     <div class="card">
-        <h3>5. Internal Discovery <span class="score">1 flag</span></h3>
-        <p>The application talks to internal services. Can you reach them?
-        Map the internal network to earn the flag.</p>
+        <h3>5. <span class="score">The sysop's desk</span></h3>
+        <p>Access a specific user's dashboard. You'll know it when you see it.</p>
     </div>
 
     <div class="card">
-        <h3>6. AI Assistant Exploitation <span class="score">2 flags</span></h3>
-        <p>The platform has an AI chatbot. It's helpful — maybe too helpful.
-        Can you make it reveal information or act on behalf of other users?
-        (Requires providing your own LLM API key through the chat UI.)</p>
+        <h3>6. <span class="score">The keys to the kingdom</span></h3>
+        <p>Find the platform's internal API keys.</p>
+    </div>
+
+    <div class="card">
+        <h3>7. <span class="score">Token alchemy</span></h3>
+        <p>Become admin.</p>
+    </div>
+
+    <div class="card">
+        <h3>8. <span class="score">Creative couponing</span></h3>
+        <p>Get a coupon you weren't supposed to have.</p>
+    </div>
+
+    <div class="card">
+        <h3>9. <span class="score">Return to sender</span></h3>
+        <p>Make the shop give you money.</p>
+    </div>
+
+    <div class="card">
+        <h3>10. <span class="score">Behind the curtain</span></h3>
+        <p>Discover what services run behind the application.</p>
+    </div>
+
+    <div class="card">
+        <h3>11. <span class="score">The chatbot knows too much</span></h3>
+        <p>Extract another user's private data through the AI assistant.
+        (Requires your own LLM API key.)</p>
+    </div>
+
+    <div class="card">
+        <h3>12. <span class="score">The chatbot does too much</span></h3>
+        <p>Make the AI assistant take an action as another user.
+        (Requires your own LLM API key.)</p>
     </div>
 
     <h2>The Defender</h2>
@@ -204,12 +229,12 @@ HOMEPAGE_HTML = """\
     <div class="card">
         <p>
             Found a flag? Submit it here:<br>
-            <span class="endpoint">POST /chains/flags/submit</span>
+            <span class="endpoint">POST /flags/submit</span>
             <span style="color:#8b949e;"> — body: {"flag": "XVEH{...}", "hacker": "your-handle"}</span>
         </p>
         <p style="margin-top: 8px;">
             Check the leaderboard:
-            <span class="endpoint">GET /chains/flags/scoreboard</span>
+            <span class="endpoint">GET /flags/scoreboard</span>
         </p>
     </div>
 

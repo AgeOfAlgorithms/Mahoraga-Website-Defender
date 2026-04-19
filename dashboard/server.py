@@ -147,7 +147,7 @@ async def get_vulns():
     solves: dict[str, list[str]] = {}  # vuln_id → [hacker handles]
     try:
         async with httpx.AsyncClient(timeout=3.0) as client:
-            resp = await client.get("http://vuln-chains:7070/chains/flags/scoreboard")
+            resp = await client.get("http://vuln-chains:7070/flags/scoreboard")
             sb = resp.json()
             for entry in sb.get("leaderboard", []):
                 hacker = entry["hacker"]
@@ -230,7 +230,7 @@ async def reset_scoreboard():
     """Clear the flag submission scoreboard."""
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.post("http://vuln-chains:7070/chains/flags/reset")
+            resp = await client.post("http://vuln-chains:7070/flags/reset")
             return resp.json()
     except Exception as e:
         return {"status": "error", "message": str(e)}

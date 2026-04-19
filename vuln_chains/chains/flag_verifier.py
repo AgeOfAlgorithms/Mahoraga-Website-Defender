@@ -3,8 +3,8 @@
 All flags are embedded directly in the data the attacker steals.
 This endpoint validates, logs, and tracks flag captures per hacker.
 
-POST /chains/flags/submit — body: {"flag": "XVEH{...}", "hacker": "my-handle"}
-GET  /chains/flags/scoreboard — live leaderboard
+POST /flags/submit — body: {"flag": "XVEH{...}", "hacker": "my-handle"}
+GET  /flags/scoreboard — live leaderboard
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-router = APIRouter(prefix="/chains/flags", tags=["flag-submission"])
+router = APIRouter(prefix="/flags", tags=["flag-submission"])
 
 CHAIN_META = {
     "name": "Flag Submission",
@@ -171,7 +171,7 @@ async def scoreboard():
             "ai_assistant_exploitation": 2,
         },
         "leaderboard": leaderboard,
-        "submit_endpoint": "POST /chains/flags/submit",
+        "submit_endpoint": "POST /flags/submit",
         "body_format": '{"flag": "XVEH{...}", "hacker": "your-handle"}',
     }
 

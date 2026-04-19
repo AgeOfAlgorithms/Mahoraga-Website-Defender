@@ -111,7 +111,7 @@ def main():
     print("  Chatbot action fake flag in vehicle VIN: OK")
 
     print()
-    print("Shadow fake flags planted. These will NOT validate at /chains/flags/submit.")
+    print("Shadow fake flags planted. These will NOT validate at /flags/submit.")
     print("Submitting one will reveal the attacker was redirected to a decoy.")
 
 
