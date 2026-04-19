@@ -21,13 +21,13 @@ Mahoraga Defender is a PoC of a reactive, attacker-type agnostic, real-time defe
 
 The system is designed to be fully automated with API cost optimization in mind. A GUI was created to easily monitor traffic logs, agent activity, patching pipeline, and to control the number of agents to deploy.
 
-## Target Application
+## Target Website
 
-The target application is a fork of [crAPI (Completely Ridiculous API)](https://github.com/OWASP/crAPI), an intentionally vulnerable web application created by OWASP for teaching API security testing. crAPI simulates a vehicle-owner platform with microservices covering the OWASP Top 10 API vulnerabilities.
+The target (victim) website is a fork of [crAPI (Completely Ridiculous API)](https://github.com/OWASP/crAPI), an intentionally vulnerable web application created by OWASP for teaching API security testing. crAPI simulates a vehicle-owner platform with microservices covering the OWASP Top 10 API vulnerabilities.
 
 Our fork (`crapi-fork/`) adds:
 - Planted honeypots (decoy credentials, endpoints, tokens) for attacker detection
-- 12 CTF-style flags embedded across the attack surface
+- Total 12 CTF-style flags embedded across the attack surface
 - A parallel "shadow" stack with identical services and separate databases for safe attacker observation
 - nginx Lua-based session routing that transparently redirects suspicious sessions from prod to shadow
 

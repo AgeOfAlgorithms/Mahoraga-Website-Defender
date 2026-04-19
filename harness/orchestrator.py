@@ -727,6 +727,9 @@ class Orchestrator:
                     "SESSION REDIRECTED TO SHADOW for %s (trigger: %s)",
                     event.event_id, event.event_type,
                 )
+                # Copy last N requests from this IP to shadow log so the
+                # shadow analyzer can see the exploit that triggered redirect
+                self._replay_to_shadow(source_ip)
                 # Sync attacker's user record to shadow DB so their token works
                 self._sync_attacker_to_shadow(token)
             # Also sync on subsequent events if token is present and session already in shadow
@@ -740,6 +743,39 @@ class Orchestrator:
             logger.error("Failed to score session for %s: %s", event.event_id, e)
 
     _synced_emails: set[str] = set()
+
+    def _replay_to_shadow(self, source_ip: str, n_lines: int = 5) -> None:
+        """Copy the last N prod access log lines from this IP to shadow.log.
+
+        This ensures the shadow analyzer sees the exploit requests that
+        triggered the redirect, even though they hit prod.
+        """
+        if not source_ip:
+            return
+        try:
+            access_log = self.project_dir / "logs" / "nginx" / "access.log"
+            shadow_log = self.project_dir / "logs" / "nginx" / "shadow.log"
+            if not access_log.exists():
+                return
+
+            # Read last 500 lines (efficient enough), filter by IP
+            lines = access_log.read_text().splitlines()
+            ip_lines = [l for l in lines[-500:] if l.startswith(source_ip)]
+            replay = ip_lines[-n_lines:]
+
+            if not replay:
+                return
+
+            # Rewrite env="prod" → env="shadow" so analyzer picks them up
+            with open(shadow_log, "a") as f:
+                for line in replay:
+                    shadow_line = line.replace('env="prod"', 'env="shadow"')
+                    f.write(shadow_line + "\n")
+
+            logger.info("Replayed %d prod requests from %s to shadow.log",
+                        len(replay), source_ip)
+        except Exception as e:
+            logger.error("Failed to replay prod logs to shadow: %s", e)
 
     def _sync_attacker_to_shadow(self, token: str) -> None:
         """Extract email from JWT and sync user to shadow DB."""
