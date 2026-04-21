@@ -486,6 +486,12 @@ class Watcher:
             return events
 
         with open(self.log_path, "r") as f:
+            # Detect log truncation (e.g. start.sh reset)
+            f.seek(0, 2)  # seek to end
+            file_size = f.tell()
+            if file_size < self._last_position:
+                logger.info("Log file truncated, resetting position")
+                self._last_position = 0
             f.seek(self._last_position)
             new_lines = f.readlines()
             self._last_position = f.tell()

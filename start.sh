@@ -10,11 +10,12 @@ rsync -a --delete crapi-original/ crapi-fork/
 echo "  crapi-fork reset from crapi-original"
 
 # Clear stale data from previous sessions
-echo "  Clearing logs, events, audit, patches..."
-rm -f events/*.json audit/*.json patches/*.json
+echo "  Clearing logs, events, audit, patches, pipeline..."
+rm -f events/*.json audit/*.json patches/*.json pipeline/*.json
 : > logs/nginx/access.log 2>/dev/null || true
 : > logs/nginx/shadow.log 2>/dev/null || true
 : > logs/nginx/error.log 2>/dev/null || true
+: > reactive_defender.log 2>/dev/null || true
 
 # Start all services
 echo "[2/5] Starting services..."

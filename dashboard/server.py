@@ -55,8 +55,8 @@ async def get_events():
 @app.get("/api/audit")
 async def get_audit():
     entries = _load_json_dir(AUDIT_DIR)
-    # Return most recent 200
-    return entries[-200:]
+    # Return all entries — frontend filters by agent
+    return entries
 
 
 @app.get("/api/patches")
@@ -398,13 +398,13 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 
-async def tail_file(path: Path, parser, msg_type: str):
+async def tail_file(path: Path, parser, msg_type: str, start_from_end: bool = True):
     """Tail a log file and broadcast new lines.
     Reopens the file each cycle to pick up writes from other containers."""
     position = 0
 
-    # Start at end of file
-    if path.exists():
+    # Start at end of file (skip existing lines) unless told otherwise
+    if start_from_end and path.exists():
         position = path.stat().st_size
 
     while True:
@@ -441,8 +441,11 @@ async def tail_file(path: Path, parser, msg_type: str):
 
 
 async def watch_json_dir(directory: Path, msg_type: str):
-    """Watch a directory for new/modified JSON files and broadcast."""
+    """Watch a directory for new/modified JSON files and broadcast.
+    First pass: snapshot existing files without broadcasting.
+    Subsequent passes: only broadcast genuinely new/modified files."""
     seen: dict[str, float] = {}
+    initialized = False
 
     while True:
         if not directory.exists():
@@ -453,15 +456,17 @@ async def watch_json_dir(directory: Path, msg_type: str):
             for f in directory.glob("*.json"):
                 mtime = f.stat().st_mtime
                 if f.name not in seen or seen[f.name] < mtime:
+                    if initialized and f.name != "cost_ledger.json":
+                        try:
+                            data = json.loads(f.read_text())
+                            await manager.broadcast({
+                                "type": msg_type,
+                                "data": data,
+                            })
+                        except (json.JSONDecodeError, OSError):
+                            pass
                     seen[f.name] = mtime
-                    try:
-                        data = json.loads(f.read_text())
-                        await manager.broadcast({
-                            "type": msg_type,
-                            "data": data,
-                        })
-                    except (json.JSONDecodeError, OSError):
-                        pass
+            initialized = True
         except Exception as e:
             logger.error("watch_json_dir error for %s: %s", directory, e)
 
@@ -547,7 +552,7 @@ async def startup():
     asyncio.create_task(tail_file(
         LOGS_DIR / "access.log", parse_access_line, "prod_log"))
     asyncio.create_task(tail_file(
-        LOGS_DIR / "shadow.log", parse_shadow_line, "shadow_log"))
+        LOGS_DIR / "shadow.log", parse_shadow_line, "shadow_log", start_from_end=False))
     asyncio.create_task(watch_json_dir(EVENTS_DIR, "event"))
     asyncio.create_task(watch_json_dir(AUDIT_DIR, "audit"))
     asyncio.create_task(watch_json_dir(PATCHES_DIR, "patch"))

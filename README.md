@@ -17,9 +17,9 @@ AI-powered reactive website defense system designed to withstand AI-powered hack
 
 ## Introduction
 
-Mahoraga Defender is a PoC of a reactive, attacker-type agnostic, real-time defense system. The core mechanism involves tricking an adversary into performing discoveries and attacks on a benign, fake environment ("shadow" environment) and logging these attacks. Then, an LLM agent reads the logs to analyze the attack(s) and hands over the analysis to more LLM agents to patch the code accordingly.
+Mahoraga Defender is a PoC of a reactive, attacker-type agnostic, real-time defense system. The core mechanism involves tricking an adversary into performing discoveries and attacks on a benign, fake environment ("shadow" environment) and logging these attacks. Then, an LLM agent analyzes the logs and hands over the analysis to more LLM agents to directly patch the source code and deploy the patches.
 
-The system is designed to be fully automated with API cost optimization in mind. A GUI was created to easily monitor traffic logs, agent activity, patching pipeline, and to control the number of agents to deploy.
+The system is designed to be fully automated with API cost optimization in mind. A GUI was created to easily monitor traffic logs, agent activity and patching pipeline, and to control the number of agents to deploy.
 
 ## Target Website
 
@@ -55,12 +55,18 @@ On deployment, Python services are hot-reloaded via gunicorn (instant), while Ja
 
 **Why no Tester agent?** We considered adding a dedicated user testing agent and a separate test environment, but removed both to keep the system simple and fast.
 
-## How to Start Experiment
+## How to Start
 
-1. `docker compose down -v` — wipe everything
-2. `./start.sh` — resets `crapi-fork/` from `crapi-original/`, rebuilds all services, plants flags and honeypots
-3. Run defender: `python3 -m harness.main --app-url http://localhost:8888 -v`
-4. Start pentesting (ideally from a separate network/IP)
+### Getting ready
+- Using a conda or python virtual environment is recommended (e.g., `conda create -n XYZ python=3.13`, then `conda activate XYZ`). 
+- Install requirements: `pip install -r requirements` 
+
+### Full Defender vs. Attacker Experiment
+1. Run `./start.sh` from project root directory — resets `crapi-fork/` source code from `crapi-original/`, rebuilds all services, plants flags and honeypots.
+2. Run defender: `python3 -m harness.main --app-url http://localhost:8888 -v`. 
+3. Start pentesting the website on `localhost:8888` (challenge description is at `localhost:8888/challenge`) If pentesting using an AI agent, the agent should not get any access to internal docker processes, as this would be considered cheating.
+4. While pentesting, monitor the defender dashboard on `localhost:3000` to see real time logs, agent actions, patches, captured flags, etc.
+5. After session is over, run `docker compose down -v` to wipe everything (including all generated patches and logs), returning the source code to its original state, ready for another session of testing. 
 
 ## Dashboard
 
@@ -154,3 +160,7 @@ Note: Only a few API providers have a high enough rate limit to support 3+ agent
 - **Scoring**: Redis-backed threat scoring via Flask control plane
 - **Dashboard**: React + Tailwind CSS, served by FastAPI with WebSocket for live updates
 - **Orchestration**: Python asyncio with queue-based agent coordination
+
+## Special Thanks
+
+Special thanks to [d3lta05](https://github.com/d3lta05) and Testest for penetration testing this repo's vulnerable website. 

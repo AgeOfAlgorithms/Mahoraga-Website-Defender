@@ -1,7 +1,38 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useCallback } from "react";
 
 export default function CodeDiff({ patches, audit, pipelineTickets = [] }) {
   const [selected, setSelected] = useState(null);
+  const [listWidth, setListWidth] = useState(() => {
+    return Number(localStorage.getItem("patch_list_width")) || 256;
+  });
+  const dragging = useRef(false);
+  const dragStartX = useRef(0);
+  const dragStartWidth = useRef(0);
+
+  const onDragStart = useCallback((e) => {
+    dragging.current = true;
+    dragStartX.current = e.clientX;
+    dragStartWidth.current = listWidth;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+
+    const onMouseMove = (e) => {
+      if (!dragging.current) return;
+      const delta = e.clientX - dragStartX.current;
+      const newWidth = Math.max(200, Math.min(600, dragStartWidth.current + delta));
+      setListWidth(newWidth);
+    };
+    const onMouseUp = () => {
+      dragging.current = false;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+      setListWidth(w => { localStorage.setItem("patch_list_width", w); return w; });
+    };
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+  }, [listWidth]);
 
   // Enrich patches with status from pipeline tickets
   const enrichedPatches = useMemo(() => {
@@ -33,7 +64,7 @@ export default function CodeDiff({ patches, audit, pipelineTickets = [] }) {
   return (
     <div className="h-full flex">
       {/* Patch list */}
-      <div className="w-64 shrink-0 border-r border-gray-800 overflow-y-auto">
+      <div className="shrink-0 overflow-y-auto" style={{ width: listWidth }}>
         <div className="p-3 border-b border-gray-800">
           <h2 className="text-sm font-bold text-gray-300">Patches ({enrichedPatches.length})</h2>
         </div>
@@ -54,7 +85,7 @@ export default function CodeDiff({ patches, audit, pipelineTickets = [] }) {
                 <span className="text-xs font-mono text-gray-500 truncate">{p.patch_id || p.event_id}</span>
                 <StatusBadge status={p.status} />
               </div>
-              <div className="text-sm text-gray-300 mt-1 truncate">{p.description}</div>
+              <div className="text-sm text-gray-300 mt-1 break-words">{p.description}</div>
               <div className="text-[10px] text-gray-600 mt-1">
                 {p.files_modified?.length || 0} file(s) modified
               </div>
@@ -62,6 +93,12 @@ export default function CodeDiff({ patches, audit, pipelineTickets = [] }) {
           ))
         )}
       </div>
+
+      {/* Drag handle */}
+      <div
+        onMouseDown={onDragStart}
+        className="w-1 shrink-0 bg-gray-800 hover:bg-blue-500 cursor-col-resize transition-colors"
+      />
 
       {/* Patch detail */}
       <div className="flex-1 overflow-y-auto overflow-x-hidden">

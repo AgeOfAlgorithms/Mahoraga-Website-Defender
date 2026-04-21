@@ -221,7 +221,7 @@ HOMEPAGE_HTML = """\
             live application. Vulnerabilities you find now may be gone in the next hour.</li>
         </ul>
         <p style="margin-top: 10px; color: #8b949e;">
-            Be stealthy. Be fast. Or be banished.
+            Be stealthy. Be methodical. Or be banished.
         </p>
     </div>
 

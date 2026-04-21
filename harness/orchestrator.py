@@ -413,6 +413,21 @@ class Orchestrator:
             self._audit("shadow_analysis_complete", "system", "shadow_analyzer",
                          f"Analyzed {n_entries} entries — no exploits detected")
 
+    # Endpoints that are intentional honeypots — don't try to fix them
+    HONEYPOT_ENDPOINTS = {
+        "/identity/api/v3/admin",
+        "/identity/api/debug/tokens",
+        "/identity/api/internal/health",
+        "/workshop/api/internal/config",
+        "/community/api/v2/admin",
+        "/community/api/v2/debug",
+        "/community/api/v2/internal",
+        "/.env",
+        "/.git",
+        "/wp-admin",
+        "/phpinfo",
+    }
+
     async def _enqueue_exploit(self, attack: dict) -> None:
         """Called by ShadowAnalyzer — drops the exploit into the fixer queue.
         Deduplicates by type+endpoint — same vuln type on different endpoints
@@ -421,6 +436,12 @@ class Orchestrator:
 
         exploit_type = attack.get("type", "unknown")
         request_line = attack.get("request", "")
+
+        # Skip honeypot endpoints — they're intentionally vulnerable
+        for hp in self.HONEYPOT_ENDPOINTS:
+            if hp in request_line:
+                logger.debug("Skipping honeypot exploit: %s", request_line[:80])
+                return
 
         # Extract endpoint path from request line (e.g. "GET /workshop/api/mechanic/..." → "/mechanic/")
         path_match = re.search(r'(?:GET|POST|PUT|DELETE|PATCH)\s+(\S+)', request_line)
