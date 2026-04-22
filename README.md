@@ -1,4 +1,4 @@
-# Mahoraga Defender
+# Mahoraga Website Defender
 
 <p align="center">
   <img src="./resource/mahoraga.jpg" width="300" />
@@ -9,7 +9,7 @@ AI-powered reactive website defense system designed to withstand AI-powered hack
 </p>
 
 <p align="center">
-  <a href="https://github.com/AgeOfAlgorithms/Mahoraga-Website-Defender"><img src="https://img.shields.io/github/stars/AgeOfAlgorithms/Mahoraga-Agent?style=social" alt="GitHub stars"></a>
+  <a href="https://github.com/AgeOfAlgorithms/Mahoraga-Website-Defender"><img src="https://img.shields.io/github/stars/AgeOfAlgorithms/Mahoraga-Website-Defender?style=social" alt="GitHub stars"></a>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
   <a href="https://makeapullrequest.com"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs Welcome"></a>
 </p>
@@ -17,21 +17,24 @@ AI-powered reactive website defense system designed to withstand AI-powered hack
 
 ## Table of Contents
 
-- [Introduction](#introduction)
-- [Target Website](#target-website)
-- [Architecture](#architecture)
-  - [Dual Environments](#dual-environments)
-  - [Agent Pipeline](#agent-pipeline)
-- [How to Start](#how-to-start)
-  - [Getting ready](#getting-ready)
-  - [Full Defender vs. Attacker Experiment](#full-defender-vs-attacker-experiment)
-- [Dashboard](#dashboard)
-  - [Logs](#logs)
-  - [Agents](#agents)
-  - [Pipeline](#pipeline)
-  - [Patches](#patches)
-- [LLM Configuration](#llm-configuration)
-- [Tech Stack](#tech-stack)
+- [Mahoraga Website Defender](#mahoraga-website-defender)
+  - [Table of Contents](#table-of-contents)
+  - [Introduction](#introduction)
+  - [Target Website](#target-website)
+  - [Architecture](#architecture)
+    - [Dual Environments](#dual-environments)
+    - [Agent Pipeline](#agent-pipeline)
+  - [How to Start](#how-to-start)
+    - [Getting ready](#getting-ready)
+    - [Full Defender vs. Attacker Experiment](#full-defender-vs-attacker-experiment)
+  - [Dashboard](#dashboard)
+    - [Logs](#logs)
+    - [Agents](#agents)
+    - [Pipeline](#pipeline)
+    - [Patches](#patches)
+  - [LLM Configuration](#llm-configuration)
+  - [Tech Stack](#tech-stack)
+  - [Special Thanks](#special-thanks)
 
 ## Introduction
 
