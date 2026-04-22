@@ -44,7 +44,7 @@ The system is designed to be fully automated with API cost optimization in mind.
 
 ## Target Website
 
-The target (victim) website is a fork of [crAPI (Completely Ridiculous API)](https://github.com/OWASP/crAPI), an intentionally vulnerable web application created by OWASP for teaching API security testing. crAPI simulates a vehicle-owner platform with microservices covering the OWASP Top 10 API vulnerabilities.
+The target (victim) website is a fork of [crAPI (Completely Ridiculous API)](https://github.com/OWASP/crAPI), an intentionally vulnerable web application created by OWASP for teaching API security testing. crAPI simulates a vehicle-owner platform with microservices covering the OWASP Top 10 API vulnerabilities. The defender is designed to clearly distinguish between normal and adversarial user sessions so that normal users would not experience any drop in user experience quality while the defender is protecting the website from attackers.
 
 Our fork (`crapi-fork/`) adds:
 - Planted honeypots (decoy credentials, endpoints, tokens) for attacker detection
@@ -184,4 +184,4 @@ Note: Only a few API providers have a high enough rate limit to support 3+ agent
 
 ## Special Thanks
 
-Special thanks to [d3lta05](https://github.com/d3lta05) and Testest for their help with penetration testing. 
+Special thanks to [d3lta05](https://github.com/d3lta05) and [aleemladha](https://github.com/aleemladha) for their help with penetration testing. 
