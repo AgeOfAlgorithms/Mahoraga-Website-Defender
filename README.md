@@ -1,7 +1,7 @@
 # Mahoraga Defender
 
 <p align="center">
-  <img src="./img/mahoraga.jpg" width="300" />
+  <img src="./resource/mahoraga.jpg" width="300" />
 </p>
 
 <p align="center">
@@ -9,7 +9,7 @@ AI-powered reactive website defense system designed to withstand AI-powered hack
 </p>
 
 <p align="center">
-  <a href="https://github.com/AgeOfAlgorithms/Mahoraga-Agent"><img src="https://img.shields.io/github/stars/AgeOfAlgorithms/Mahoraga-Agent?style=social" alt="GitHub stars"></a>
+  <a href="https://github.com/AgeOfAlgorithms/Mahoraga-Website-Defender"><img src="https://img.shields.io/github/stars/AgeOfAlgorithms/Mahoraga-Agent?style=social" alt="GitHub stars"></a>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
   <a href="https://makeapullrequest.com"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs Welcome"></a>
 </p>
@@ -41,15 +41,15 @@ A pristine copy is kept in `crapi-original/` so the environment can be reset bet
 
 ### Agent Pipeline
 
-```
-Traffic → Watcher → Shadow Redirect → Shadow Analyzer → Fixer → Reviewer → Deploy
-```
+<p align="center">
+  <img src="./resource/system_architecture.png" width="600" />
+</p>
 
 - **Orchestrator**: coordinates the entire pipeline. Manages agent lifecycles, patch/review queues, ticket state, deployment, and crash recovery. Scales fixer/reviewer agents up and down at runtime.
-- **Watcher** (rule-based): monitors prod traffic logs and scores sessions on threat level using pattern matching (brute force, injection, enumeration, honeypot access, etc.). Once the threat score exceeds a threshold, the session is transparently redirected to the shadow environment.
+- **Watcher** (rule-based): monitors prod traffic logs and scores sessions on threat level using pattern matching (brute force, injection, enumeration, honeypot access, etc.). Once the threat score exceeds a threshold, it triggers the redirect action.
 - **Shadow Analyzer** (LLM): reads shadow environment traffic logs on a configurable interval to detect successful exploits. Deduplicates log entries, detects attack patterns, and pushes confirmed exploits to the fixing queue.
 - **Fixer** (LLM agent): receives exploit reports, reads the relevant source code, and patches it directly in `crapi-fork/`. Operates in a sandboxed bash environment with access restricted to `crapi-fork/` only.
-- **Reviewer** (LLM agent): verifies patches for correctness, scope, and security. Approved patches are deployed automatically; rejected patches are sent back to the fixer with feedback.
+- **Reviewer** (LLM agent): verifies patches for correctness, scope, and security. Approved patches trigger the deploy action; rejected patches are sent back to the fixer with feedback.
 
 On deployment, Python services are hot-reloaded via gunicorn (instant), while Java/Go services are rebuilt via `docker compose up -d --build`.
 
@@ -78,28 +78,28 @@ A global agent status bar is visible on all tabs showing agent health (active/hu
 Real-time split-screen prod/shadow request log viewer with severity-colored entries and traffic grouping
 
 <p align="center">
-  <img src="./img/dashboard_logs.png" width="600" />
+  <img src="./resource/dashboard_logs.png" width="600" />
 </p>
 
 ### Agents
 Per-agent activity feed with system prompts, tool calls, and LLM model labels
 
 <p align="center">
-  <img src="./img/dashboard_agents.png" width="600" />
+  <img src="./resource/dashboard_agents.png" width="600" />
 </p>
 
 ### Pipeline
 Kanban board: Detected → Fixing → Reviewing → Deployed, with resizable detail panel
 
 <p align="center">
-  <img src="./img/dashboard_pipeline.png" width="600" />
+  <img src="./resource/dashboard_pipeline.png" width="600" />
 </p>
 
 ### Patches
 Code diffs, files modified, rollback commands, and timeline per patch
 
 <p align="center">
-  <img src="./img/dashboard_patches.png" width="600" />
+  <img src="./resource/dashboard_patches.png" width="600" />
 </p>
 
 
