@@ -38,7 +38,7 @@ AI-powered reactive website defense system designed to withstand AI-powered hack
 
 ## Introduction
 
-Mahoraga Defender is a PoC of a reactive, attacker-type agnostic, real-time defense system. The core mechanism involves tricking an adversary into performing discoveries and attacks on a benign, fake environment ("shadow" environment) and logging these attacks. Then, an LLM agent analyzes the logs and hands over the analysis to more LLM agents to directly patch the source code and deploy the patches.
+Mahoraga Defender is a PoC of a reactive, attacker-type agnostic, real-time defense system. The core mechanism involves tricking an adversary into performing discoveries and attacks on a benign, fake environment ("shadow" environment) and logging these attacks. Then, an LLM agent analyzes the logs and hands over details of any detected exploits to more LLM agents to fix the vulnerabilities and deploy the patches.
 
 The system is designed to be fully automated with API cost optimization in mind. A GUI was created to easily monitor traffic logs, agent activity and patching pipeline, and to control the number of agents to deploy.
 
@@ -68,7 +68,7 @@ A pristine copy is kept in `crapi-original/` so the environment can be reset bet
 
 - **Orchestrator**: coordinates the entire pipeline. Manages agent lifecycles, patch/review queues, ticket state, deployment, and crash recovery. Scales fixer/reviewer agents up and down at runtime.
 - **Watcher** (rule-based): monitors prod traffic logs and scores sessions on threat level using pattern matching (brute force, injection, enumeration, honeypot access, etc.). Once the threat score exceeds a threshold, it triggers the redirect action.
-- **Shadow Analyzer** (LLM): reads shadow environment traffic logs on a configurable interval to detect successful exploits. Deduplicates log entries, detects attack patterns, and pushes confirmed exploits to the fixing queue.
+- **Shadow Analyzer** (LLM agent): reads shadow environment traffic logs on a configurable interval to detect successful exploits. Deduplicates log entries, detects attack patterns, and pushes confirmed exploits to the fixing queue.
 - **Fixer** (LLM agent): receives exploit reports, reads the relevant source code, and patches it directly in `crapi-fork/`. Operates in a sandboxed bash environment with access restricted to `crapi-fork/` only.
 - **Reviewer** (LLM agent): verifies patches for correctness, scope, and security. Approved patches trigger the deploy action; rejected patches are sent back to the fixer with feedback.
 
@@ -87,7 +87,7 @@ On deployment, Python services are hot-reloaded via gunicorn (instant), while Ja
 2. Run defender: `python3 -m harness.main --app-url http://localhost:8888 -v`. 
 3. Start pentesting the website on `localhost:8888` (challenge description is at `localhost:8888/challenge`) If pentesting using an AI agent, the agent should not get any access to internal docker processes, as this would be considered cheating.
 4. While pentesting, monitor the defender dashboard on `localhost:3000` to see real time logs, agent actions, patches, captured flags, etc.
-5. After session is over, run `docker compose down -v` to wipe everything (including all generated patches and logs), returning the source code to its original state, ready for another session of testing. 
+5. After session is over, run `docker compose down -v` to remove the docker containers and databases that were spun up for this project.
 
 ## Dashboard
 
@@ -99,7 +99,7 @@ A global agent status bar is visible on all tabs showing agent health (active/hu
 Real-time split-screen prod/shadow request log viewer with severity-colored entries and traffic grouping
 
 <p align="center">
-  <img src="./resource/dashboard_logs.png" width="600" />
+  <img src="./resource/dashboard_logs.png" width="1000" />
 </p>
 
 ### Agents
@@ -178,7 +178,7 @@ Note: Only a few API providers have a high enough rate limit to support 3+ agent
 - **LLMs**: Any OpenAI-compatible API (default: Gemini 3 Flash Preview for agents, Gemini 2.5 Flash for analyzer)
 - **Target App**: modified crAPI (Python/Django, Java/Spring Boot, Go, MongoDB, PostgreSQL)
 - **Routing**: nginx with Lua scripting for transparent session redirection
-- **Scoring**: Redis-backed threat scoring via Flask control plane
+- **Scoring**: Redis-backed threat scoring via FastAPI control plane
 - **Dashboard**: React + Tailwind CSS, served by FastAPI with WebSocket for live updates
 - **Orchestration**: Python asyncio with queue-based agent coordination
 
