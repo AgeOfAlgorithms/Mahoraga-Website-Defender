@@ -42,7 +42,7 @@ A pristine copy is kept in `crapi-original/` so the environment can be reset bet
 ### Agent Pipeline
 
 <p align="center">
-  <img src="./resource/system_architecture.png" width="600" />
+  <img src="./resource/system_architecture.png" width="1000" />
 </p>
 
 - **Orchestrator**: coordinates the entire pipeline. Manages agent lifecycles, patch/review queues, ticket state, deployment, and crash recovery. Scales fixer/reviewer agents up and down at runtime.
