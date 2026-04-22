@@ -15,6 +15,24 @@ AI-powered reactive website defense system designed to withstand AI-powered hack
 </p>
 
 
+## Table of Contents
+
+- [Introduction](#introduction)
+- [Target Website](#target-website)
+- [Architecture](#architecture)
+  - [Dual Environments](#dual-environments)
+  - [Agent Pipeline](#agent-pipeline)
+- [How to Start](#how-to-start)
+  - [Getting ready](#getting-ready)
+  - [Full Defender vs. Attacker Experiment](#full-defender-vs-attacker-experiment)
+- [Dashboard](#dashboard)
+  - [Logs](#logs)
+  - [Agents](#agents)
+  - [Pipeline](#pipeline)
+  - [Patches](#patches)
+- [LLM Configuration](#llm-configuration)
+- [Tech Stack](#tech-stack)
+
 ## Introduction
 
 Mahoraga Defender is a PoC of a reactive, attacker-type agnostic, real-time defense system. The core mechanism involves tricking an adversary into performing discoveries and attacks on a benign, fake environment ("shadow" environment) and logging these attacks. Then, an LLM agent analyzes the logs and hands over the analysis to more LLM agents to directly patch the source code and deploy the patches.
@@ -53,13 +71,13 @@ A pristine copy is kept in `crapi-original/` so the environment can be reset bet
 
 On deployment, Python services are hot-reloaded via gunicorn (instant), while Java/Go services are rebuilt via `docker compose up -d --build`.
 
-**Why no Tester agent?** We considered adding a dedicated user testing agent and a separate test environment, but removed both to keep the system simple and fast.
+**Why no Tester agent?** We considered adding a dedicated user testing agent and a separate test environment, but removed both to keep the system light.
 
 ## How to Start
 
 ### Getting ready
 - Using a conda or python virtual environment is recommended (e.g., `conda create -n XYZ python=3.13`, then `conda activate XYZ`). 
-- Install requirements: `pip install -r requirements` 
+- Install requirements: `pip install -r requirements.txt` 
 
 ### Full Defender vs. Attacker Experiment
 1. Run `./start.sh` from project root directory — resets `crapi-fork/` source code from `crapi-original/`, rebuilds all services, plants flags and honeypots.
@@ -85,21 +103,21 @@ Real-time split-screen prod/shadow request log viewer with severity-colored entr
 Per-agent activity feed with system prompts, tool calls, and LLM model labels
 
 <p align="center">
-  <img src="./resource/dashboard_agents.png" width="600" />
+  <img src="./resource/dashboard_agents.png" width="1000" />
 </p>
 
 ### Pipeline
 Kanban board: Detected → Fixing → Reviewing → Deployed, with resizable detail panel
 
 <p align="center">
-  <img src="./resource/dashboard_pipeline.png" width="600" />
+  <img src="./resource/dashboard_pipeline.png" width="1000" />
 </p>
 
 ### Patches
 Code diffs, files modified, rollback commands, and timeline per patch
 
 <p align="center">
-  <img src="./resource/dashboard_patches.png" width="600" />
+  <img src="./resource/dashboard_patches.png" width="1000" />
 </p>
 
 
@@ -163,4 +181,4 @@ Note: Only a few API providers have a high enough rate limit to support 3+ agent
 
 ## Special Thanks
 
-Special thanks to [d3lta05](https://github.com/d3lta05) and Testest for penetration testing this repo's vulnerable website. 
+Special thanks to [d3lta05](https://github.com/d3lta05) and Testest for their help with penetration testing. 
