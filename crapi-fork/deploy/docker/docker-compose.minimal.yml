@@ -1,0 +1,107 @@
+# Minimal resource configuration for crAPI
+# Runs on ~2 CPUs minimum, scales up when more resources available
+# Usage: docker-compose -f docker-compose.yml -f docker-compose.minimal.yml up
+
+services:
+  crapi-identity:
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+
+  crapi-community:
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.15'
+          memory: 64M
+
+  crapi-workshop:
+    deploy:
+      resources:
+        limits:
+          cpus: '1.5'
+          memory: 768M
+        reservations:
+          cpus: '0.4'
+          memory: 192M
+
+  crapi-chatbot:
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+
+  crapi-web:
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 192M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+
+  postgresdb:
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.3'
+          memory: 128M
+
+  mongodb:
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.2'
+          memory: 64M
+
+  chromadb:
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+
+  mailhog:
+    deploy:
+      resources:
+        limits:
+          cpus: '0.3'
+          memory: 128M
+        reservations:
+          cpus: '0.05'
+          memory: 32M
+
+  api.mypremiumdealership.com:
+    deploy:
+      resources:
+        limits:
+          cpus: '0.2'
+          memory: 64M
+        reservations:
+          cpus: '0.05'
+          memory: 16M
+
+# Total reservations (minimum): ~1.65 CPUs, ~800MB RAM
+# Total limits (maximum when available): ~6.0 CPUs, ~3.2GB RAM

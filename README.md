@@ -184,4 +184,4 @@ Note: Only a few API providers have a high enough rate limit to support 3+ agent
 
 ## Special Thanks
 
-Special thanks to [d3lta05](https://github.com/d3lta05) and [aleemladha](https://github.com/aleemladha) for their help with penetration testing. 
+Special thanks to [d3lta05](https://github.com/d3lta05) ([LinkedIn](https://www.linkedin.com/in/lucasnason/)) and [aleemladha](https://github.com/aleemladha) for their help with penetration testing. 

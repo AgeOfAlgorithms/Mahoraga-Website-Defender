@@ -1,0 +1,35 @@
+{{- if .Values.workshop.autoscaling.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ .Values.workshop.name }}-hpa
+  labels:
+    release: {{ .Release.Name }}
+    app: {{ .Values.workshop.name }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ .Values.workshop.name }}
+  minReplicas: {{ .Values.workshop.autoscaling.minReplicas | default 1 }}
+  maxReplicas: {{ .Values.workshop.autoscaling.maxReplicas | default 5 }}
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: {{ .Values.workshop.autoscaling.targetCPUUtilizationPercentage | default 70 }}
+  {{- if .Values.workshop.autoscaling.targetMemoryUtilizationPercentage }}
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: {{ .Values.workshop.autoscaling.targetMemoryUtilizationPercentage }}
+  {{- end }}
+  {{- if .Values.workshop.autoscaling.behavior }}
+  behavior:
+    {{- toYaml .Values.workshop.autoscaling.behavior | nindent 4 }}
+  {{- end }}
+{{- end }}

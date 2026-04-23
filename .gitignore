@@ -24,10 +24,6 @@ __pycache__/
 *.pyc
 *.egg-info/
 
-# crAPI fork (separate repo)
-crapi-fork/
-crapi-original/
-
 # Docker
 *.tar
 

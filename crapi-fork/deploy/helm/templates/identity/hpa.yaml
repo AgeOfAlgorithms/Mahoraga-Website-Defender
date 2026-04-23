@@ -1,0 +1,31 @@
+{{- if .Values.identity.autoscaling.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ .Values.identity.name }}-hpa
+  labels:
+    release: {{ .Release.Name }}
+    app: {{ .Values.identity.name }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ .Values.identity.name }}
+  minReplicas: {{ .Values.identity.autoscaling.minReplicas | default 1 }}
+  maxReplicas: {{ .Values.identity.autoscaling.maxReplicas | default 3 }}
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: {{ .Values.identity.autoscaling.targetCPUUtilizationPercentage | default 70 }}
+  {{- if .Values.identity.autoscaling.targetMemoryUtilizationPercentage }}
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: {{ .Values.identity.autoscaling.targetMemoryUtilizationPercentage }}
+  {{- end }}
+{{- end }}
