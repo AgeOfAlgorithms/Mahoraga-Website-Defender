@@ -41,7 +41,7 @@ def setup_logging(verbose: bool = False) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Reactive Defender — AI-powered website security agent",
+        description="Reactive Defender — AI-powered webapp security agent",
     )
     parser.add_argument(
         "--project-dir",

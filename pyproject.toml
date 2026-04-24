@@ -1,7 +1,7 @@
 [project]
 name = "reactive-defender"
 version = "0.1.0"
-description = "AI-powered reactive website defense agent"
+description = "AI-powered reactive webapp defense agent"
 requires-python = ">=3.10"
 dependencies = [
     "claude-agent-sdk>=0.1.58",

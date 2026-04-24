@@ -1,15 +1,15 @@
-# Mahoraga Website Defender
+# Mahoraga Webapp Defender
 
 <p align="center">
   <img src="./resource/mahoraga.jpg" width="300" />
 </p>
 
 <p align="center">
-AI-powered reactive website defense system designed to withstand AI-powered hacks in real-time.
+AI-powered reactive webapp defense system designed to withstand AI-powered hacks in real-time.
 </p>
 
 <p align="center">
-  <a href="https://github.com/AgeOfAlgorithms/Mahoraga-Website-Defender"><img src="https://img.shields.io/github/stars/AgeOfAlgorithms/Mahoraga-Website-Defender?style=social" alt="GitHub stars"></a>
+  <a href="https://github.com/AgeOfAlgorithms/Mahoraga-Webapp-Defender"><img src="https://img.shields.io/github/stars/AgeOfAlgorithms/Mahoraga-Webapp-Defender?style=social" alt="GitHub stars"></a>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
   <a href="https://makeapullrequest.com"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs Welcome"></a>
 </p>
@@ -17,7 +17,7 @@ AI-powered reactive website defense system designed to withstand AI-powered hack
 
 ## Table of Contents
 
-- [Mahoraga Website Defender](#mahoraga-website-defender)
+- [Mahoraga Webapp Defender](#mahoraga-webapp-defender)
   - [Table of Contents](#table-of-contents)
   - [Introduction](#introduction)
   - [Target Website](#target-website)
