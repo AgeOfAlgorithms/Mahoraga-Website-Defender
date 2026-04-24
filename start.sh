@@ -17,9 +17,13 @@ rm -f events/*.json audit/*.json patches/*.json pipeline/*.json
 : > logs/nginx/error.log 2>/dev/null || true
 : > reactive_defender.log 2>/dev/null || true
 
-# Start all services
-echo "[2/5] Starting services..."
-docker compose up -d --build
+# Build prod images first — shadow services reuse them by tag, so they
+# must exist locally before `up` tries to pull them from a registry.
+echo "[2/5] Building images..."
+docker compose build crapi-identity crapi-community crapi-workshop crapi-web
+
+echo "      Starting services..."
+docker compose up -d
 
 # Wait for crAPI to be healthy
 echo "[3/5] Waiting for crAPI to be ready..."
