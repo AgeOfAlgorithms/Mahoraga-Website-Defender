@@ -2,6 +2,7 @@ services:
   # ── crAPI PROD (built from fork) ────────────────────────────────
   crapi-identity:
     build: ./crapi-fork/services/identity
+    image: mahoraga-crapi-identity:latest
     container_name: crapi-identity
     logging:
       driver: json-file
@@ -53,6 +54,7 @@ services:
 
   crapi-community:
     build: ./crapi-fork/services/community
+    image: mahoraga-crapi-community:latest
     container_name: crapi-community
     logging:
       driver: json-file
@@ -91,6 +93,7 @@ services:
 
   crapi-workshop:
     build: ./crapi-fork/services/workshop
+    image: mahoraga-crapi-workshop:latest
     container_name: crapi-workshop
     volumes:
       - ./crapi-fork/services/workshop/crapi:/app/crapi
@@ -185,6 +188,7 @@ services:
 
   crapi-web:
     build: ./crapi-fork/services/web
+    image: mahoraga-crapi-web:latest
     container_name: crapi-web
     logging:
       driver: json-file
@@ -404,7 +408,7 @@ services:
       - defender-net
 
   shadow-identity:
-    image: reactive_defender-crapi-identity:latest
+    image: mahoraga-crapi-identity:latest
     container_name: shadow-identity
     environment:
       - LOG_LEVEL=INFO
@@ -450,7 +454,7 @@ services:
       - mail-net
 
   shadow-community:
-    image: reactive_defender-crapi-community:latest
+    image: mahoraga-crapi-community:latest
     container_name: shadow-community
     environment:
       - LOG_LEVEL=INFO
@@ -483,7 +487,7 @@ services:
       - defender-net
 
   shadow-workshop:
-    image: reactive_defender-crapi-workshop:latest
+    image: mahoraga-crapi-workshop:latest
     container_name: shadow-workshop
     volumes:
       - ./crapi-fork/services/workshop/crapi:/app/crapi
@@ -524,7 +528,7 @@ services:
       - defender-net
 
   shadow-web:
-    image: reactive_defender-crapi-web:latest
+    image: mahoraga-crapi-web:latest
     container_name: shadow-web
     environment:
       - COMMUNITY_SERVICE=shadow-community:8087

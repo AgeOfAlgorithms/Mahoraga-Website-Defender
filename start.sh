@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 set -e
 
+# BuildKit enables parallel service builds and better layer caching.
+# Historical note: we briefly disabled BuildKit because "--network=host" had
+# issues on Docker Desktop with openresty/openresty:alpine, but no Dockerfile
+# in this repo uses that flag, and openresty is pulled (not built). If BuildKit
+# ever causes a regression on Docker Desktop, flip these back to 0.
+export DOCKER_BUILDKIT=1
+export COMPOSE_DOCKER_CLI_BUILD=1
+
 echo "=== Mahoraga Defender ==="
 echo ""
 
@@ -20,7 +28,7 @@ rm -f events/*.json audit/*.json patches/*.json pipeline/*.json
 # Build prod images first — shadow services reuse them by tag, so they
 # must exist locally before `up` tries to pull them from a registry.
 echo "[2/5] Building images..."
-docker compose build crapi-identity crapi-community crapi-workshop crapi-web
+docker compose build --parallel crapi-identity crapi-community crapi-workshop crapi-web
 
 echo "      Starting services..."
 docker compose up -d
