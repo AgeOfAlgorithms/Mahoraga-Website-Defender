@@ -21,7 +21,7 @@ AI-powered reactive webapp defense system designed to withstand AI-powered hacks
   - [Table of Contents](#table-of-contents)
   - [Introduction](#introduction)
   - [Target Website](#target-website)
-  - [Architecture](#architecture)
+  - [Mahoraga Defender Architecture](#mahoraga-defender-architecture)
     - [Dual Environments](#dual-environments)
     - [Agent Pipeline](#agent-pipeline)
   - [How to Start](#how-to-start)
@@ -54,7 +54,7 @@ Our fork (`crapi-fork/`) adds:
 
 A pristine copy is kept in `crapi-original/` so the environment can be reset between experiments.
 
-## Architecture
+## Mahoraga Defender Architecture
 
 ### Dual Environments
 - **Prod**: serves real users via nginx reverse proxy (port 8888)
